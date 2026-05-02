@@ -16,9 +16,6 @@
 *.i64
 *.map
 
-# vcpkg
-vcpkg_installed/
-
 build/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
