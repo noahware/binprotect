@@ -4,6 +4,8 @@
 
 namespace binwrite
 {
+	class binary_t;
+	class rva_t;
 	class section_t;
 
 	class symbol_t
@@ -24,9 +26,10 @@ namespace binwrite
 
 		symbol_ref_t() = default;
 
-		symbol_ref_t(std::shared_ptr<symbol_t> target, std::shared_ptr<symbol_t> self)
+		symbol_ref_t(std::shared_ptr<symbol_t> target, std::shared_ptr<symbol_t> self, const size_type encoding_size)
 				:	self_(std::move(self)),
-					target_(std::move(target)) { }
+					target_(std::move(target)),
+					encoding_size_(encoding_size) { }
 
 		[[nodiscard]] std::shared_ptr<symbol_t> self() const
 		{
@@ -38,11 +41,23 @@ namespace binwrite
 			return target_;
 		}
 
-		virtual bool widen_encoding() = 0;
 		virtual bool emit_reference(binary_t& binary, rva_t self_rva, rva_t target_rva) = 0;
+
+		virtual bool widen_encoding()
+		{
+			return true;
+		}
 
 	protected:
 		std::shared_ptr<symbol_t> self_;
 		std::shared_ptr<symbol_t> target_;
+
+		size_type encoding_size_;
+	};
+
+	class data_symbol_ref_t : public symbol_ref_t
+	{
+	public:
+		bool emit_reference(binary_t& binary, rva_t self_rva, rva_t target_rva) override;
 	};
 }

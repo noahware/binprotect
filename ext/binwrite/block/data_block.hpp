@@ -10,7 +10,7 @@ namespace binwrite
 	public:
 		[[nodiscard]] size_type size() const override
 		{
-			return bytes_.size();
+			return static_cast<size_type>(bytes_.size());
 		}
 
 		void emit_bytes(std::vector<std::uint8_t>& buffer) const override

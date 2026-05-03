@@ -452,21 +452,21 @@ void binwrite::binary_t::recompile()
 
 	for (const auto& section : sections_ | std::views::values)
 	{
-		const std::size_t section_rva = buffer.size();
+		const std::size_t section_rva = final_buffer.size();
 
 		for (const auto& symbol : symbols_)
 		{
 			symbol->emit_bytes(final_buffer);
 		}
 
-		const std::size_t section_size = buffer.size() - section_rva;
+		const std::size_t section_size = final_buffer.size() - section_rva;
 		const std::size_t padding_needed = alignment - (section_size % alignment);
 
 		section->set_rva(rva_t{ static_cast<rva_t::value_type>(section_rva) });
 		section->set_size(static_cast<section_t::size_type>(section_size));
 		section->set_padding(static_cast<section_t::size_type>(padding_needed));
 
-		buffer.insert(buffer.end(), padding_needed, section->padding_value());
+		final_buffer.insert(final_buffer.end(), padding_needed, section->padding_value());
 	}
 
 	update_section_headers();
