@@ -3,6 +3,7 @@
 
 namespace binwrite
 {
+	class symbol_t;
 	class binary_t;
 
 	class section_t
@@ -40,7 +41,24 @@ namespace binwrite
 		void remove_padding(size_type size);
 		void add_padding(size_type size);
 
+		[[nodiscard]] std::uint8_t padding_value() const
+		{
+			return code() ? 0xCC : 0x00;
+		}
+
+		[[nodiscard]] std::span<std::shared_ptr<symbol_t>> symbols()
+		{
+			return symbols_;
+		}
+
+		[[nodiscard]] std::span<const std::shared_ptr<symbol_t>> symbols() const
+		{
+			return symbols_;
+		}
+
 	protected:
+		std::vector<std::shared_ptr<symbol_t>> symbols_;
+
 		rva_t rva_;
 		size_type size_;
 		size_type padding_;

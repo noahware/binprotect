@@ -1,5 +1,5 @@
 #include "pe.hpp"
-#include "../../arch/instruction/basic_block.hpp"
+#include "../../block/basic_block.hpp"
 #include "../../util/serialize.hpp"
 
 #include <spdlog/spdlog.h>
@@ -19,6 +19,13 @@ binwrite::rva_t binwrite::portable_executable_t::entry_point() const
 	const auto img = image();
 
 	return rva_t{ img->nt_headers()->optional_header.address_of_entry_point };
+}
+
+std::size_t binwrite::portable_executable_t::section_alignment() const
+{
+	const auto img = image();
+
+	return img->nt_headers()->optional_header.section_alignment;
 }
 
 void binwrite::portable_executable_t::decompress()

@@ -43,6 +43,7 @@ namespace binwrite
 
 		[[nodiscard]] std::uint64_t image_base() const override;
 		[[nodiscard]] rva_t entry_point() const override;
+		[[nodiscard]] std::size_t section_alignment() const override;
 
 		void decompress() override;
 		void compress() override;

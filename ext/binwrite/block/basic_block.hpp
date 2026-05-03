@@ -1,8 +1,9 @@
 #pragma once
 #include <vector>
 
-#include "../../binary/rva/rva.hpp"
-#include "instruction.hpp"
+#include "../binary/rva/rva.hpp"
+#include "../binary/symbols/symbols.hpp"
+#include "../arch/instruction/instruction.hpp"
 
 std::vector<std::uint8_t> group_instruction_bytes(std::span<const binwrite::instruction_t> instructions);
 
@@ -10,11 +11,9 @@ namespace binwrite
 {
 	class binary_t;
 
-	class basic_block_t
+	class basic_block_t : public symbol_t
 	{
 	public:
-		using size_type = std::int64_t;
-
 		explicit basic_block_t(std::shared_ptr<rva_t> rva)
 				:	rva_(std::move(rva)) { }
 
@@ -100,6 +99,21 @@ namespace binwrite
 		bool operator==(const basic_block_t& other) const
 		{
 			return rva_ == other.rva_;
+		}
+
+		[[nodiscard]] size_type size() const override
+		{
+			return total_size_;
+		}
+
+		void emit_bytes(std::vector<std::uint8_t>& buffer) const override
+		{
+			for (const auto& instruction : instructions_)
+			{
+				const auto bytes = instruction.bytes();
+
+				buffer.insert(buffer.end(), bytes.begin(), bytes.end());
+			}
 		}
 
 	protected:

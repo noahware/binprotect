@@ -2,7 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "../../binary/binary.hpp"
+#include "../binary/binary.hpp"
 
 void binwrite::basic_block_t::clear_disassembly()
 {

@@ -75,8 +75,6 @@ FetchContent_MakeAvailable(argparse)
 # Target: binprotect
 set(binprotect_SOURCES
 	cmake.toml
-	"ext/binwrite/arch/instruction/basic_block.cpp"
-	"ext/binwrite/arch/instruction/basic_block.hpp"
 	"ext/binwrite/arch/instruction/instruction.hpp"
 	"ext/binwrite/arch/mnemonic/mnemonic.cpp"
 	"ext/binwrite/arch/mnemonic/mnemonic.hpp"
@@ -114,6 +112,12 @@ set(binprotect_SOURCES
 	"ext/binwrite/binary/symbols/map_parsing.hpp"
 	"ext/binwrite/binary/symbols/pdb_parsing.cpp"
 	"ext/binwrite/binary/symbols/pdb_parsing.hpp"
+	"ext/binwrite/binary/symbols/symbols.cpp"
+	"ext/binwrite/binary/symbols/symbols.hpp"
+	"ext/binwrite/block/basic_block.cpp"
+	"ext/binwrite/block/basic_block.hpp"
+	"ext/binwrite/block/data_block.cpp"
+	"ext/binwrite/block/data_block.hpp"
 	"ext/binwrite/disassembler/decoded_operand.cpp"
 	"ext/binwrite/disassembler/decoded_operand.hpp"
 	"ext/binwrite/disassembler/disassembled_instruction.cpp"

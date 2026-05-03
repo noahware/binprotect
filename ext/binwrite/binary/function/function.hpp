@@ -1,5 +1,5 @@
 #pragma once
-#include "../../arch/instruction/basic_block.hpp"
+#include "../../block/basic_block.hpp"
 
 #include <unordered_map>
 
