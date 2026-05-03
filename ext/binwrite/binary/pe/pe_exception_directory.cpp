@@ -171,7 +171,7 @@ static void parse_ip_to_state_map(portable_executable_t& pe,
 	}
 }
 
-static void parse_try_block_handlers(portable_executable_t& pe,
+static bool parse_try_block_handlers(portable_executable_t& pe,
 	const cfh4::func_info4_t& func_info,
 	const std::uint64_t image_base,
 	const std::int32_t function_start,
@@ -182,11 +182,16 @@ static void parse_try_block_handlers(portable_executable_t& pe,
 {
 	cfh4::try_block_map4_t try_block_map(&func_info, image_base);
 
-	std::shared_ptr<rva_t> chunk_rva = pe.add_rva(func_info.disp_try_block_map);
-
 	for (auto entry : try_block_map)
 	{
 		pe.add_data_rva_ref(reinterpret_cast<std::int32_t*>(entry.disp_handler_array_ref.ptr));
+
+		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(entry.disp_handler_array) }))
+		{
+			return false;
+		}
+
+		std::shared_ptr<rva_t> chunk_rva = pe.add_rva(func_info.disp_try_block_map);
 
 		cfh4::handler_map4_t handler_map(&entry, image_base, function_start);
 
@@ -260,6 +265,8 @@ static void parse_try_block_handlers(portable_executable_t& pe,
 			spdlog::info("catch handler 0x{:X}", handler_entry.disp_of_handler);
 		}
 	}
+
+	return true;
 }
 
 static bool parse_cxx_funcinfo4(portable_executable_t& pe,
@@ -292,31 +299,49 @@ static bool parse_cxx_funcinfo4(portable_executable_t& pe,
 		return false;
 	}
 
+	if (func_info.header.has_try_block_map && func_info.disp_try_block_map)
+	{
+		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_try_block_map) }) ||
+			!parse_try_block_handlers(pe, func_info, image_base, function_start,
+				runtime_function->begin_address, func_handlers, catch_handlers,
+				catches_seh)
+			)
+		{
+			return false;
+		}
+	}
+
 	register_func_info_refs(pe, func_info, *data_rva);
 
 	if (func_info.disp_ip_to_state_map)
 	{
+		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_ip_to_state_map) }))
+		{
+			return false;
+		}
+
 		parse_ip_to_state_map(pe, func_info, image_base, function_start, runtime_function->begin_address);
 	}
 
-	cfh4::unwind_map4_t unwind_map(&func_info, image_base);
-
-	for (const auto entry : unwind_map)
+	if (func_info.disp_unwind_map)
 	{
-		if (entry.action)
+		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_ip_to_state_map) }))
 		{
-			register_func_info_handler(pe,
-				reinterpret_cast<const std::int32_t*>(entry.action_ref.ptr),
-				static_cast<std::uint32_t>(entry.action),
-				catch_handlers);
+			return false;
 		}
-	}
 
-	if (func_info.header.has_try_block_map)
-	{
-		parse_try_block_handlers(pe, func_info, image_base, function_start,
-			runtime_function->begin_address, func_handlers, catch_handlers,
-			catches_seh);
+		cfh4::unwind_map4_t unwind_map(&func_info, image_base);
+
+		for (const auto entry : unwind_map)
+		{
+			if (entry.action)
+			{
+				register_func_info_handler(pe,
+					reinterpret_cast<const std::int32_t*>(entry.action_ref.ptr),
+					static_cast<std::uint32_t>(entry.action),
+					catch_handlers);
+			}
+		}
 	}
 
 	return true;
