@@ -431,6 +431,47 @@ void binwrite::binary_t::reindex_basic_blocks() const
 	bb_index_dirty_ = false;
 }
 
+void binwrite::binary_t::recompile()
+{
+	for (const auto& symbol_ref : symbol_refs_)
+	{
+		if (!symbol_ref->widen_encoding())
+		{
+			spdlog::error("unable to widen symbol reference's encoding");
+
+			return;
+		}
+	}
+
+	// todo: walk symbol references and calculate their final rvas. then update their encoding
+
+	// todo: reserve bytes in buffer
+	std::vector<std::uint8_t> final_buffer;
+
+	const std::size_t alignment = section_alignment();
+
+	for (const auto& section : sections_ | std::views::values)
+	{
+		const std::size_t section_rva = buffer.size();
+
+		for (const auto& symbol : symbols_)
+		{
+			symbol->emit_bytes(final_buffer);
+		}
+
+		const std::size_t section_size = buffer.size() - section_rva;
+		const std::size_t padding_needed = alignment - (section_size % alignment);
+
+		section->set_rva(rva_t{ static_cast<rva_t::value_type>(section_rva) });
+		section->set_size(static_cast<section_t::size_type>(section_size));
+		section->set_padding(static_cast<section_t::size_type>(padding_needed));
+
+		buffer.insert(buffer.end(), padding_needed, section->padding_value());
+	}
+
+	update_section_headers();
+}
+
 void binwrite::binary_t::reindex_functions() const
 {
 	fn_index_.clear();

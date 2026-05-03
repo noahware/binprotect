@@ -148,36 +148,7 @@ namespace binwrite
 		virtual void update_relocations() = 0;
 		virtual bool is_definitely_in_code_range(rva_t rva) const = 0;
 
-		void recompile()
-		{
-			// todo: walk symbol references and widen their encodings
-
-			// todo: reserve bytes in buffer
-			std::vector<std::uint8_t> buffer;
-
-			const std::size_t alignment = section_alignment();
-
-			for (const auto& section : sections_ | std::views::values)
-			{
-				const std::size_t section_rva = buffer.size();
-
-				for (const auto& symbol : symbols_)
-				{
-					symbol->emit_bytes(buffer);
-				}
-
-				const std::size_t section_size = buffer.size() - section_rva;
-				const std::size_t padding_needed = alignment - (section_size % alignment);
-
-				section->set_rva(rva_t{ static_cast<rva_t::value_type>(section_rva) });
-				section->set_size(static_cast<section_t::size_type>(section_size));
-				section->set_padding(static_cast<section_t::size_type>(padding_needed));
-
-				buffer.insert(buffer.end(), padding_needed, section->padding_value());
-			}
-
-			update_section_headers();
-		}
+		void recompile();
 
 		void process_disassembly_queue();
 		void split_basic_blocks_in_data();
@@ -213,6 +184,8 @@ namespace binwrite
 		std::unordered_map<std::string, std::shared_ptr<section_t>> sections_;
 
 		std::vector<std::shared_ptr<symbol_t>> symbols_;
+		std::vector<std::shared_ptr<symbol_ref_t>> symbol_refs_;
+
 		std::vector<std::shared_ptr<rva_t>> rva_blocks_;
 
 		std::vector<std::shared_ptr<rva_t>> rvas_;
