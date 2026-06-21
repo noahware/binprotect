@@ -94,7 +94,8 @@ binwrite::rva_t::value_type binwrite::portable_executable_t::process_section_ali
 
 void binwrite::portable_executable_t::update_section_headers()
 {
-	const std::int64_t headers_size = std::min(static_cast<std::int64_t>(0x1000), static_cast<std::int64_t>(buffer_.size()));
+	const std::uint32_t size_of_headers = image()->nt_headers()->optional_header.size_of_headers;
+	const std::int64_t headers_size = std::min(static_cast<std::int64_t>(size_of_headers), static_cast<std::int64_t>(buffer_.size()));
 
 	std::vector headers_buffer(buffer_.begin(), buffer_.begin() + headers_size);
 
