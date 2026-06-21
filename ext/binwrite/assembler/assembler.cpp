@@ -113,7 +113,7 @@ std::optional<std::pair<binwrite::assembler_instruction_t::bytes_t, binwrite::as
 {
 	bytes_t bytes;
 
-	std::uint64_t size = sizeof(bytes);
+	auto size = static_cast<ZyanUSize>(sizeof(bytes));
 
 	const auto status = ZydisEncoderEncodeInstruction(&request_, bytes.data(), &size);
 
