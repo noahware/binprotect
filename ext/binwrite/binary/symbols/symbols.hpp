@@ -10,10 +10,6 @@
 namespace binwrite
 {
 	class binary_t;
-	class section_t;
-	class symbol_t;
-
-	using symbol_list_t = std::list<std::shared_ptr<symbol_t>>;
 
 	class symbol_t : public std::enable_shared_from_this<symbol_t>
 	{

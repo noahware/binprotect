@@ -1,5 +1,25 @@
 #include "section.hpp"
 #include "../binary.hpp"
+#include "../symbols/symbols.hpp"
+
+void binwrite::section_t::add_symbol(std::shared_ptr<symbol_t> symbol)
+{
+	const auto it = symbols_.insert(symbols_.end(), std::move(symbol));
+
+	(*it)->list_iterator_ = it;
+}
+
+void binwrite::section_t::move_symbol_after(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol)
+{
+	if (location == movable_symbol)
+	{
+		return;
+	}
+
+	const auto next = std::next(location->list_iterator_);
+
+	symbols_.splice(next, symbols_, movable_symbol->list_iterator_);
+}
 
 binwrite::section_t::section_t(binary_t& binary, const rva_t rva, const size_type size, const size_type padding,
                                const bool code_section, const bool headers_section)

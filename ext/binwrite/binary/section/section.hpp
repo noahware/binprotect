@@ -1,13 +1,15 @@
 #pragma once
 #include <list>
+#include <memory>
 
 #include "../rva/rva.hpp"
-#include "binwrite/binary/symbols/symbols.hpp"
 
 namespace binwrite
 {
 	class symbol_t;
 	class binary_t;
+
+	using symbol_list_t = std::list<std::shared_ptr<symbol_t>>;
 
 	class section_t
 	{
@@ -47,29 +49,14 @@ namespace binwrite
 			return code() ? 0xCC : 0x00;
 		}
 
-		void add_symbol(std::shared_ptr<symbol_t> symbol)
-		{
-			const auto it = symbols_.insert(symbols_.end(), std::move(symbol));
-
-			(*it)->list_iterator_ = it;
-		}
+		void add_symbol(std::shared_ptr<symbol_t> symbol);
 
 		[[nodiscard]] auto symbols() const
 		{
 			return symbols_;
 		}
 
-		void move_symbol_after(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol)
-		{
-			if (location == movable_symbol)
-			{
-				return;
-			}
-
-			const auto next = std::next(location->list_iterator_);
-
-			symbols_.splice(next, symbols_, movable_symbol->list_iterator_);
-		}
+		void move_symbol_after(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol);
 
 	protected:
 		symbol_list_t symbols_;
