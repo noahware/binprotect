@@ -1,17 +1,24 @@
 #include "data_block.hpp"
 #include "../binary/binary.hpp"
 
-bool binwrite::data_symbol_ref_t::emit_reference(binary_t& binary, const rva_t self_rva, const rva_t target_rva)
+std::shared_ptr<binwrite::symbol_t> binwrite::data_block_t::split(binary_t& binary, const size_type byte_offset)
 {
-	const rva_t::value_type target_value = target_rva.value();
+	if (!byte_offset)
+	{
+		return { };
+	}
 
-	std::uint8_t* const destination = binary.data() + self_rva.value();
-	const auto source = reinterpret_cast<const std::uint8_t*>(&target_value);
+	const auto begin = bytes_.begin() + byte_offset;
+	const auto end = bytes_.end();
 
-	const size_type copy_size = std::min(encoding_size_, static_cast<size_type>(sizeof(rva_t::size_type)));
+	const auto owning_section = section();
+	const std::span new_bytes(begin, end);
 
-	std::memset(destination, 0, encoding_size_);
-	std::memcpy(destination, source, copy_size);
+	const auto new_data_block = binary.create_data_block(*owning_section, new_bytes);
 
-	return true;
+	bytes_.erase(begin, end);
+
+	new_data_block->move_after(shared_from_this());
+
+	return new_data_block;
 }

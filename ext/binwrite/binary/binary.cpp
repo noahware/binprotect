@@ -79,6 +79,32 @@ void binwrite::binary_t::remove_function(const std::shared_ptr<function_t>& func
 	std::erase(functions_, function);
 }
 
+std::shared_ptr<binwrite::data_block_t> binwrite::binary_t::create_data_block(
+	section_t& section, const std::span<const std::uint8_t> bytes, const std::optional<rva_t> rva)
+{
+	const auto data_block = std::make_shared<data_block_t>(bytes);
+
+	data_block->set_rva(rva);
+
+	section.add_symbol(data_block);
+	symbols_.push_back(data_block);
+
+	return data_block;
+}
+
+std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
+	section_t& section, const std::span<const instruction_t> instructions, const std::optional<rva_t> rva)
+{
+	const auto basic_block = std::make_shared<basic_block_t>(instructions);
+
+	basic_block->set_rva(rva);
+
+	section.add_symbol(basic_block);
+	symbols_.push_back(basic_block);
+
+	return basic_block;
+}
+
 std::shared_ptr<binwrite::function_t> binwrite::binary_t::create_function(const std::string& name, const rva_t rva)
 {
 	if (const auto existing_function = find_function(rva))
@@ -102,34 +128,6 @@ std::shared_ptr<binwrite::function_t> binwrite::binary_t::create_function(const 
 	const std::string name = std::format("sub_{:X}", rva.value());
 
 	return create_function(name, rva);
-}
-
-std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(const rva_t rva, const std::span<const instruction_t> instructions)
-{
-	const auto bytes = group_instruction_bytes(instructions);
-
-	insert(rva, bytes, true);
-
-	const auto added_rva = add_rva(rva);
-	const auto basic_block = std::make_shared<basic_block_t>(added_rva);
-
-	basic_blocks_.push_back(basic_block);
-	bb_index_dirty_ = true;
-
-	basic_block->push(*this, instructions, true);
-
-	return basic_block;
-}
-
-std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(const rva_t rva)
-{
-	const auto added_rva = add_rva(rva);
-	const auto basic_block = std::make_shared<basic_block_t>(added_rva);
-
-	basic_blocks_.push_back(basic_block);
-	bb_index_dirty_ = true;
-
-	return basic_block;
 }
 
 void binwrite::binary_t::unlink_basic_block(std::shared_ptr<basic_block_t> basic_block)
@@ -237,7 +235,7 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 
 	basic_block.erase(*this, index, split_count, false);
 
-	auto new_basic_block = std::make_shared<basic_block_t>(offset_rva);
+	auto new_basic_block = std::make_shared<basic_block_t>();
 
 	new_basic_block->push(*this, new_block_instructions, true);
 
@@ -318,12 +316,25 @@ std::shared_ptr<binwrite::section_t> binwrite::binary_t::find_section(const std:
 {
 	const auto it = sections_.find(name);
 
-	if (it == sections_.end())
+	if (name.empty() || it == sections_.end())
 	{
 		return { };
 	}
 
 	return it->second;
+}
+
+std::shared_ptr<binwrite::section_t> binwrite::binary_t::find_section(const rva_t rva) const
+{
+	for (const auto& section : sections_ | std::views::values)
+	{
+		if (section->contains(rva))
+		{
+			return section;
+		}
+	}
+
+	return { };
 }
 
 std::shared_ptr<binwrite::section_t> binwrite::binary_t::code_section() const
@@ -443,31 +454,50 @@ void binwrite::binary_t::recompile()
 		}
 	}
 
-	// todo: walk symbol references and calculate their final rvas. then update their encoding
-
 	// todo: reserve bytes in buffer
 	std::vector<std::uint8_t> final_buffer;
 
 	const std::size_t alignment = section_alignment();
 
-	for (const auto& section : sections_ | std::views::values)
-	{
-		const std::size_t section_rva = final_buffer.size();
-
-		for (const auto& symbol : symbols_)
+	const auto get_current_rva = [&final_buffer]() -> rva_t
 		{
+			return rva_t{ static_cast<rva_t::value_type>(final_buffer.size()) };
+		};
+
+	for (const auto& section : ordered_sections())
+	{
+		const rva_t section_rva = get_current_rva();
+
+		for (const auto& symbol : section->symbols())
+		{
+			symbol->set_rva(get_current_rva());
+
 			symbol->emit_bytes(final_buffer);
+
+			spdlog::info("emitted {} bytes in {}", symbol->size(), section_rva.value());
 		}
 
-		const std::size_t section_size = final_buffer.size() - section_rva;
+		const std::size_t section_size = final_buffer.size() - section_rva.value();
 		const std::size_t padding_needed = alignment - (section_size % alignment);
 
-		section->set_rva(rva_t{ static_cast<rva_t::value_type>(section_rva) });
+		section->set_rva(section_rva);
 		section->set_size(static_cast<section_t::size_type>(section_size));
 		section->set_padding(static_cast<section_t::size_type>(padding_needed));
 
 		final_buffer.insert(final_buffer.end(), padding_needed, section->padding_value());
 	}
+
+	for (const auto& symbol_ref : symbol_refs_)
+	{
+		if (!symbol_ref->patch_reference(*this))
+		{
+			spdlog::error("unable to patch symbol reference's encoding");
+
+			return;
+		}
+	}
+
+	buffer_ = std::move(final_buffer);
 
 	update_section_headers();
 }

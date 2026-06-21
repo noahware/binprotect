@@ -1,4 +1,5 @@
 #pragma once
+#include "../block/data_block.hpp"
 #include "function/function.hpp"
 #include "section/section.hpp"
 
@@ -58,8 +59,13 @@ namespace binwrite
 		void add_function(const std::shared_ptr<function_t>& function);
 		void remove_function(const std::shared_ptr<function_t>& function);
 
-		std::shared_ptr<basic_block_t> create_basic_block(rva_t rva, std::span<const instruction_t> instructions);
-		std::shared_ptr<basic_block_t> create_basic_block(rva_t rva);
+		std::shared_ptr<data_block_t> create_data_block(section_t& section, std::span<const std::uint8_t> bytes,
+		                                                std::optional<rva_t> rva = std::nullopt);
+
+		std::shared_ptr<basic_block_t> create_basic_block(section_t& section,
+		                                                  std::span<const instruction_t> instructions,
+		                                                  std::optional<rva_t> rva = std::nullopt);
+
 		void unlink_basic_block(std::shared_ptr<basic_block_t> basic_block);
 
 		[[nodiscard]] std::span<std::shared_ptr<basic_block_t>> basic_blocks();
@@ -83,6 +89,7 @@ namespace binwrite
 		[[nodiscard]] bool is_data_symbol(rva_t rva) const;
 
 		[[nodiscard]] std::shared_ptr<section_t> find_section(const std::string& name) const;
+		[[nodiscard]] std::shared_ptr<section_t> find_section(rva_t rva) const;
 		[[nodiscard]] std::shared_ptr<section_t> code_section() const;
 		[[nodiscard]] std::shared_ptr<section_t> data_section() const;
 
@@ -141,6 +148,8 @@ namespace binwrite
 
 		void assign_basic_block_to_function(const std::shared_ptr<function_t>& function, const std::shared_ptr<basic_block_t>& basic_block) const;
 
+		void recompile();
+
 	protected:
 		virtual void find_data_rvas() = 0;
 		virtual void find_sections() = 0;
@@ -148,8 +157,10 @@ namespace binwrite
 		virtual void update_relocations() = 0;
 		virtual bool is_definitely_in_code_range(rva_t rva) const = 0;
 
-		void recompile();
-
+		std::shared_ptr<symbol_t> find_containing_symbol(rva_t rva) const;
+		void fill_code_section_empty_space();
+		void erase_symbol(std::shared_ptr<symbol_t> symbol);
+		void clear_symbol_rvas();
 		void process_disassembly_queue();
 		void split_basic_blocks_in_data();
 
@@ -157,7 +168,7 @@ namespace binwrite
 		                                        rva_t instruction_rva, rva_t next_instruction_rva,
 		                                        std::vector<std::shared_ptr<rva_t>>& risky_references);
 
-		bool collect_basic_block_instructions(const disassembler_t& disassembler, basic_block_t& basic_block,
+		bool collect_basic_block_instructions(const disassembler_t& disassembler, std::vector<instruction_t>& instructions, rva_t block_rva, std::uint32_t& block_size,
 		                                      bool is_risky, std::vector<std::shared_ptr<rva_t>>& risky_references);
 
 		bool process_multi_level_jump_table(const basic_block_t& basic_block, rva_t entry_table_base,
@@ -167,6 +178,13 @@ namespace binwrite
 		                                    const disassembled_instruction_t& mov_disassembly,
 		                                    basic_block_t::size_type mov_index,
 		                                    basic_block_t::size_type lea_index);
+
+		std::shared_ptr<data_block_t> create_data_block_from_rva(section_t& section, const rva_t rva, const symbol_t::size_type size)
+		{
+			const std::span<const std::uint8_t> bytes(data() + rva.value(), size);
+
+			return create_data_block(section, bytes, rva);
+		}
 
 		void find_jump_tables(const basic_block_t& basic_block);
 
@@ -200,6 +218,8 @@ namespace binwrite
 		std::vector<std::shared_ptr<function_t>> functions_;
 
 		std::vector<std::shared_ptr<relocation_t>> relocations_;
+
+		mutable std::map<rva_t::value_type, std::shared_ptr<symbol_t>> disassembly_symbol_map_;
 
 		// lookup caches - mutable because they are rebuilt lazily from const lookup methods
 		mutable bool bb_index_dirty_ = true;

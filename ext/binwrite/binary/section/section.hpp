@@ -1,5 +1,8 @@
 #pragma once
+#include <list>
+
 #include "../rva/rva.hpp"
+#include "binwrite/binary/symbols/symbols.hpp"
 
 namespace binwrite
 {
@@ -13,11 +16,8 @@ namespace binwrite
 
 		section_t() = default;
 
-		explicit section_t(const rva_t rva, const size_type size, const size_type padding, const bool code_section)
-				:	rva_(rva),
-					size_(size),
-					padding_(padding),
-					code_(code_section) { }
+		explicit section_t(binary_t& binary, rva_t rva, size_type size, size_type padding, bool code_section,
+		                   bool headers_section = false);
 
 		void process_disruption(rva_t disruption_rva, rva_t::size_type disruption_size);
 
@@ -31,6 +31,7 @@ namespace binwrite
 		[[nodiscard]] bool contains(rva_t rva) const;
 		[[nodiscard]] bool code() const;
 		[[nodiscard]] bool data() const;
+		[[nodiscard]] bool headers() const;
 
 		[[nodiscard]] size_type size() const;
 		void set_size(size_type size);
@@ -46,22 +47,37 @@ namespace binwrite
 			return code() ? 0xCC : 0x00;
 		}
 
-		[[nodiscard]] std::span<std::shared_ptr<symbol_t>> symbols()
+		void add_symbol(std::shared_ptr<symbol_t> symbol)
+		{
+			const auto it = symbols_.insert(symbols_.end(), std::move(symbol));
+
+			(*it)->list_iterator_ = it;
+		}
+
+		[[nodiscard]] auto symbols() const
 		{
 			return symbols_;
 		}
 
-		[[nodiscard]] std::span<const std::shared_ptr<symbol_t>> symbols() const
+		void move_symbol_after(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol)
 		{
-			return symbols_;
+			if (location == movable_symbol)
+			{
+				return;
+			}
+
+			const auto next = std::next(location->list_iterator_);
+
+			symbols_.splice(next, symbols_, movable_symbol->list_iterator_);
 		}
 
 	protected:
-		std::vector<std::shared_ptr<symbol_t>> symbols_;
+		symbol_list_t symbols_;
 
 		rva_t rva_;
 		size_type size_;
 		size_type padding_;
 		bool code_;
+		bool headers_;
 	};
 }

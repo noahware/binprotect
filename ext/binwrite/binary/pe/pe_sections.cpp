@@ -8,6 +8,8 @@ void binwrite::portable_executable_t::find_sections()
 	const auto section_headers = nt_headers->section_headers();
 	const auto section_count = nt_headers->file_header.number_of_sections;
 
+	sections_[{}] = std::make_shared<section_t>(*this, rva_t{ 0 }, nt_headers->optional_header.size_of_headers, 0, false, true);
+
 	for (std::uint16_t i = 0; i < section_count; i++)
 	{
 		const auto section = &section_headers[i];
@@ -24,7 +26,7 @@ void binwrite::portable_executable_t::find_sections()
 		const auto total_size = next_virtual_address - virtual_address;
 		const auto padding_size = total_size - section->virtual_size;
 
-		sections_[section_name] = std::make_shared<section_t>(rva_t{ virtual_address }, section->virtual_size, padding_size, code_section);
+		sections_[section_name] = std::make_shared<section_t>(*this, rva_t{ virtual_address }, section->virtual_size, padding_size, code_section);
 	}
 }
 
@@ -106,27 +108,16 @@ void binwrite::portable_executable_t::update_section_headers()
 
 	for (auto& section_header : img->sections())
 	{
-		if (!section_rva.value())
-		{
-			section_rva.set_value(section_header.virtual_address);
-		}
-
 		const auto section_name = section_header.to_str();
 		const auto& info = sections_[section_name];
 
-		info->set_rva(section_rva);
-
-		const std::uint32_t section_alignment = nt_headers->optional_header.section_alignment;
-
-		const rva_t aligned_section_end(process_section_alignment(info, section_alignment));
-
-		section_header.virtual_address = section_rva.value();
+		section_header.virtual_address = info->rva().value();
 		section_header.virtual_size = info->size();
 
 		section_header.pointer_to_raw_data = section_header.virtual_address;
 		section_header.size_of_raw_data = section_header.virtual_size;
 
-		section_rva = aligned_section_end;
+		section_rva.set_value(info->rva().value() + info->size() + info->padding());
 	}
 
 	nt_headers->optional_header.size_of_image = section_rva.value();

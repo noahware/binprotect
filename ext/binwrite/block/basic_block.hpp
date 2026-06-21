@@ -14,8 +14,12 @@ namespace binwrite
 	class basic_block_t : public symbol_t
 	{
 	public:
-		explicit basic_block_t(std::shared_ptr<rva_t> rva)
-				:	rva_(std::move(rva)) { }
+		constexpr static size_type invalid_index = -1;
+
+		basic_block_t() = default;
+
+		explicit basic_block_t(const std::span<const instruction_t> instructions)
+				:	instructions_(instructions.begin(), instructions.end()) { }
 
 		[[nodiscard]] std::shared_ptr<rva_t> rva() const
 		{
@@ -116,7 +120,11 @@ namespace binwrite
 			}
 		}
 
+		[[nodiscard]] std::shared_ptr<symbol_t> split(binary_t& binary, size_type byte_offset) override;
+
 	protected:
+		size_type index_from_byte_offset(size_type byte_offset) const;
+
 		void rebuild_offsets();
 
 		std::shared_ptr<rva_t> rva_;

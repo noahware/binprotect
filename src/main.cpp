@@ -42,7 +42,7 @@ static void write_file_to_disk(const std::string& path, const std::vector<std::u
 	}
 }
 
-static void mutate_basic_block(const binprotect::config::obfuscation_t& config,
+/*static void mutate_basic_block(const binprotect::config::obfuscation_t& config,
                                binwrite::binary_t& binary, binwrite::basic_block_t& basic_block,
                                const binwrite::exception_context_t& exceptions = {})
 {
@@ -217,7 +217,7 @@ static void realign_unwind_info(binwrite::portable_executable_t& pe)
 			pe.insert(*rva, static_cast<binwrite::rva_t::size_type>(padding_size), true);
 		}
 	}
-}
+}*/
 
 static void write_output_binary(const binwrite::binary_t& binary, const std::string& config_output_path)
 {
@@ -263,7 +263,9 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		exceptions_support = false;
 	}
 
-	const auto rtti_result = binwrite::parse_rtti(pe);
+	pe.disassemble();
+
+	/*const auto rtti_result = binwrite::parse_rtti(pe);
 	binwrite::parse_throw_info(pe, rtti_result);
 
 	if (exceptions_support)
@@ -279,11 +281,13 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		obfuscate_non_exceptions_binary(pe, *config);
 	}
 
-	pe.update_rva_references();
+	/*pe.update_rva_references();
 
 	realign_unwind_info(pe);
 
-	pe.update_rva_references();
+	pe.update_rva_references();*/
+
+	pe.recompile();
 
 	write_output_binary(pe, config->output_binary_file_path);
 

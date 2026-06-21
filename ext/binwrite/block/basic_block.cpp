@@ -32,19 +32,24 @@ binwrite::rva_t binwrite::basic_block_t::end_rva() const
 	return rva_t{ rva_->value() + instruction_offsets_.at(index) };
 }
 
-binwrite::basic_block_t::size_type binwrite::basic_block_t::instruction_index(const rva_t target_rva) const
+binwrite::symbol_t::size_type binwrite::basic_block_t::index_from_byte_offset(const size_type byte_offset) const
 {
-	const auto target_offset = target_rva.value() - rva_->value();
-
 	for (size_type i = 0; i < count(); i++)
 	{
-		if (instruction_offsets_[i] == target_offset)
+		if (instruction_offsets_[i] == byte_offset)
 		{
 			return i;
 		}
 	}
 
-	return -1;
+	return invalid_index;
+}
+
+binwrite::basic_block_t::size_type binwrite::basic_block_t::instruction_index(const rva_t target_rva) const
+{
+	const auto target_offset = target_rva.value() - rva_->value();
+
+	return index_from_byte_offset(target_offset);
 }
 
 void binwrite::basic_block_t::move_entire(binary_t& binary, rva_t destination) const
@@ -205,6 +210,35 @@ void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, con
 void binwrite::basic_block_t::clear(binary_t& binary)
 {
 	erase(binary, 0, count(), true);
+}
+
+std::shared_ptr<binwrite::symbol_t> binwrite::basic_block_t::split(binary_t& binary, const size_type byte_offset)
+{
+	if (!byte_offset)
+	{
+		return { };
+	}
+
+	const auto index = index_from_byte_offset(byte_offset);
+
+	if (index == invalid_index)
+	{
+		return { };
+	}
+
+	const auto begin = instructions_.begin() + index;
+	const auto end = instructions_.end();
+
+	const auto owning_section = section();
+	const std::span new_instructions(begin, end);
+
+	const auto new_basic_block = binary.create_basic_block(*owning_section, new_instructions);
+
+	instructions_.erase(begin, end);
+
+	new_basic_block->move_after(shared_from_this());
+
+	return new_basic_block;
 }
 
 void binwrite::basic_block_t::rebuild_offsets()

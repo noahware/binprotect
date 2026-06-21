@@ -1,6 +1,20 @@
 #include "section.hpp"
 #include "../binary.hpp"
 
+binwrite::section_t::section_t(binary_t& binary, const rva_t rva, const size_type size, const size_type padding,
+                               const bool code_section, const bool headers_section)
+		:	rva_(rva),
+			size_(size),
+		    padding_(padding),
+		    code_(code_section),
+		    headers_(headers_section)
+{
+	if (!code_section)
+	{
+		binary.create_data_block(*this, std::span{ binary.data() + rva.value(), size }, rva);
+	}
+}
+
 void binwrite::section_t::process_disruption(const rva_t disruption_rva, const rva_t::size_type disruption_size)
 {
 	if (contains(disruption_rva))
@@ -89,5 +103,10 @@ bool binwrite::section_t::code() const
 
 bool binwrite::section_t::data() const
 {
-	return !code_;
+	return !code_ && !headers_;
+}
+
+bool binwrite::section_t::headers() const
+{
+	return headers_;
 }
