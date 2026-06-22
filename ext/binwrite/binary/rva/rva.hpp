@@ -120,6 +120,11 @@ namespace binwrite
 			return true;
 		}
 
+		[[nodiscard]] size_type instruction_size() const noexcept
+		{
+			return size_;
+		}
+
 	protected:
 		virtual bool update_rva_in_assembler_instruction(assembler_instruction_t& instruction) const;
 

@@ -559,11 +559,132 @@ void binwrite::binary_t::populate_data_symbol_refs()
 	spdlog::info("data symbol refs: {}", symbol_refs_.size());
 }
 
+void binwrite::binary_t::populate_code_symbol_refs()
+{
+	struct convertible_ref_t
+	{
+		rva_t self_rva;
+		rva_t::value_type target_rva_value;
+		code_rva_ref_t::size_type instruction_size;
+		bool is_jmp_table;
+	};
+
+	std::vector<convertible_ref_t> candidates;
+
+	for (const auto& ref : rva_refs_)
+	{
+		const bool is_code = typeid(*ref) == typeid(code_rva_ref_t);
+		const bool is_jmp_table = typeid(*ref) == typeid(msvc_jmp_table_ref_t);
+
+		if (!is_code && !is_jmp_table)
+		{
+			continue;
+		}
+
+		const auto& code_ref = static_cast<const code_rva_ref_t&>(*ref);
+
+		const rva_t self_rva = code_ref.self();
+		const rva_t::value_type target_value = code_ref.target()->value();
+
+		if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+		{
+			continue;
+		}
+
+		candidates.push_back({ self_rva, target_value, code_ref.instruction_size(), is_jmp_table });
+	}
+
+	std::ranges::sort(candidates, [](const auto& a, const auto& b)
+	{
+		return a.self_rva < b.self_rva;
+	});
+
+	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
+	{
+		auto containing = find_containing_symbol(rva);
+
+		if (!containing)
+		{
+			return { };
+		}
+
+		const auto containing_rva = containing->rva();
+
+		if (!containing_rva)
+		{
+			return { };
+		}
+
+		if (*containing_rva == rva)
+		{
+			return containing;
+		}
+
+		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
+
+		auto new_symbol = containing->split(*this, byte_offset);
+
+		if (!new_symbol)
+		{
+			return { };
+		}
+
+		new_symbol->set_rva(rva);
+		disassembly_symbol_map_[rva.value()] = new_symbol;
+
+		return new_symbol;
+	};
+
+	for (const auto& candidate : candidates)
+	{
+		auto self_symbol = find_or_split_symbol(candidate.self_rva);
+
+		if (!self_symbol)
+		{
+			continue;
+		}
+
+		const rva_t target_rva{ candidate.target_rva_value };
+
+		auto target_symbol = find_or_split_symbol(target_rva);
+
+		if (!target_symbol)
+		{
+			continue;
+		}
+
+		if (candidate.is_jmp_table)
+		{
+			symbol_refs_.push_back(std::make_shared<msvc_jmp_table_symbol_ref_t>(
+				target_symbol,
+				self_symbol,
+				static_cast<symbol_ref_t::size_type>(candidate.instruction_size)
+			));
+		}
+		else
+		{
+			symbol_refs_.push_back(std::make_shared<code_symbol_ref_t>(
+				target_symbol,
+				self_symbol,
+				static_cast<symbol_ref_t::size_type>(candidate.instruction_size)
+			));
+		}
+	}
+
+	const auto code_ref_count = symbol_refs_.size() - std::ranges::count_if(symbol_refs_, [](const auto& ref)
+	{
+		return typeid(*ref) == typeid(data_symbol_ref_t);
+	});
+
+	spdlog::info("code symbol refs: {} (from {} candidates)", code_ref_count, candidates.size());
+}
+
 void binwrite::binary_t::disassemble()
 {
 	process_disassembly_queue();
 	fill_code_section_empty_space();
 	populate_data_symbol_refs();
+	populate_code_symbol_refs();
 	assign_function_basic_blocks();
 
 	spdlog::info("basic block count: {}", basic_blocks_.size());

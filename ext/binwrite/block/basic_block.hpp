@@ -125,6 +125,12 @@ namespace binwrite
 
 		[[nodiscard]] std::shared_ptr<symbol_t> split(binary_t& binary, size_type byte_offset) override;
 
+		void replace_instruction(const size_type index, instruction_t instruction)
+		{
+			instructions_.at(index) = std::move(instruction);
+			rebuild_offsets();
+		}
+
 	protected:
 		size_type index_from_byte_offset(size_type byte_offset) const;
 

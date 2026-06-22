@@ -111,4 +111,27 @@ namespace binwrite
 
 		bool patch_reference(binary_t& binary) override;
 	};
+
+	class code_symbol_ref_t : public symbol_ref_t
+	{
+	public:
+		code_symbol_ref_t(std::shared_ptr<symbol_t> target, std::shared_ptr<symbol_t> self,
+		                  const size_type encoding_size)
+				:	symbol_ref_t(std::move(target), std::move(self), encoding_size) { }
+
+		bool patch_reference(binary_t& binary) override;
+		bool widen_encoding() override;
+
+	protected:
+		virtual bool update_displacement(assembler_instruction_t& instruction, rva_t instruction_rva) const;
+	};
+
+	class msvc_jmp_table_symbol_ref_t : public code_symbol_ref_t
+	{
+	public:
+		using code_symbol_ref_t::code_symbol_ref_t;
+
+	protected:
+		bool update_displacement(assembler_instruction_t& instruction, rva_t instruction_rva) const override;
+	};
 }
