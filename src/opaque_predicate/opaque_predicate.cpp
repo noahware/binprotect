@@ -1,3 +1,4 @@
+#if 0
 #include "opaque_predicate.hpp"
 
 #include <spdlog/spdlog.h>
@@ -241,3 +242,4 @@ void binprotect::opaque_predicate::do_pass(binwrite::binary_t& binary,
 	opaque_blocks.push_back(original_block);
 	opaque_blocks.push_back(block_copy);
 }
+#endif

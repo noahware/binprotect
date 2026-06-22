@@ -1,3 +1,4 @@
+#if 0
 #include "virtual_machine.hpp"
 #include "vm_context.hpp"
 
@@ -205,3 +206,4 @@ void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
 		}
 	}
 }
+#endif

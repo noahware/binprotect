@@ -1,3 +1,4 @@
+#if 0
 #include "vm_context.hpp"
 #include <spdlog/spdlog.h>
 
@@ -546,3 +547,4 @@ void vm_context_t::save_flags(std::vector<binwrite::instruction_t>& instructions
 
 	instructions.push_back(mov_instruction(holder->qword, flags_to_stack(operand_offset)).value());
 }
+#endif

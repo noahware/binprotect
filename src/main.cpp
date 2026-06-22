@@ -13,12 +13,12 @@
 #include <vector>
 
 #include "config/config.hpp"
-#include "virtual_machine/virtual_machine.hpp"
-#include "virtual_machine/vm_context.hpp"
-#include "control_flow/control_flow_flattening.hpp"
-#include "linear_substitution/linear_substitution.hpp"
-#include "opaque_predicate/opaque_predicate.hpp"
-#include "mba/mba.hpp"
+//#include "virtual_machine/virtual_machine.hpp"
+//#include "virtual_machine/vm_context.hpp"
+//#include "control_flow/control_flow_flattening.hpp"
+//#include "linear_substitution/linear_substitution.hpp"
+//#include "opaque_predicate/opaque_predicate.hpp"
+//#include "mba/mba.hpp"
 
 static std::vector<std::uint8_t> read_file_from_disk(const std::string& path)
 {

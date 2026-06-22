@@ -1,3 +1,4 @@
+#if 0
 #include "linear_substitution.hpp"
 #include "../assembler/assembler.hpp"
 
@@ -300,3 +301,4 @@ void binprotect::linear_substitution::do_pass(binwrite::binary_t& binary, binwri
 		added += static_cast<std::uint32_t>(obfuscated_instructions.size()) - 1;
 	}
 }
+#endif

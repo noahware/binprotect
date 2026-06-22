@@ -1,3 +1,4 @@
+#if 0
 #include "hardware_register.hpp"
 #include "vm_context.hpp"
 
@@ -25,3 +26,4 @@ binwrite::register_t hardware_register_t::of_size(const binwrite::decoded_operan
 {
 	return of_size(operand.size());
 }
+#endif

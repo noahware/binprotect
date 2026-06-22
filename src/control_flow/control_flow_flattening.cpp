@@ -1,3 +1,4 @@
+#if 0
 #include "control_flow_flattening.hpp"
 #include "../assembler/assembler.hpp"
 
@@ -246,3 +247,4 @@ void binprotect::control_flow::flattening::do_pass(binwrite::binary_t& binary, b
 
 	dispatcher_block->push(binary, int3_instruction(), false, true);
 }
+#endif

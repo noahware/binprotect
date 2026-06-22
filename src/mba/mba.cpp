@@ -1,3 +1,4 @@
+#if 0
 #include "mba.hpp"
 #include "flag_behaviour.hpp"
 
@@ -330,3 +331,4 @@ void binprotect::mba::do_pass(binwrite::binary_t& binary, binwrite::basic_block_
 		added += static_cast<std::uint32_t>(obfuscated_instructions.size()) - 1;
 	}
 }
+#endif
