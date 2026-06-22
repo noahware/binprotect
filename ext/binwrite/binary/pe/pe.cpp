@@ -169,26 +169,78 @@ static std::vector<std::uint8_t> compile_relocation_directory(reloc_pages_t& rel
 
 void binwrite::portable_executable_t::update_relocations()
 {
-	const auto relocation_directory_header = image()->nt_headers()->optional_header.data_directories.basereloc_directory;
+	const auto header = image()->nt_headers()->optional_header.data_directories.basereloc_directory;
 
-	if (!relocation_directory_header.present())
+	if (!header.present())
 	{
 		return;
 	}
 
-	const rva_t directory_rva(relocation_directory_header.virtual_address);
+	const auto it = disassembly_symbol_map_.find(header.virtual_address);
 
-	// <pfn, list of relocs for that page>
+	if (it == disassembly_symbol_map_.end())
+	{
+		return;
+	}
+
+	const auto directory_symbol = it->second;
+	const auto section = directory_symbol->section();
+
+	if (!section)
+	{
+		return;
+	}
+
+	const auto old_dir_size = static_cast<symbol_t::size_type>(header.size);
+
 	reloc_pages_t reloc_pages = collect_reloc_pages(relocations_);
+	auto new_directory = compile_relocation_directory(reloc_pages);
 
-	const auto new_directory = compile_relocation_directory(reloc_pages);
+	std::vector<std::shared_ptr<symbol_t>> to_erase;
+	std::shared_ptr<symbol_t> tail;
+	symbol_t::size_type bytes_covered = 0;
+	bool found_start = false;
 
-	const rva_t erasal_rva(directory_rva.value() + static_cast<std::uint32_t>(new_directory.size()));
+	for (const auto& symbol : section->symbols())
+	{
+		if (symbol == directory_symbol)
+		{
+			found_start = true;
+		}
 
-	insert(directory_rva, new_directory);
-	erase(erasal_rva, static_cast<rva_t::size_type>(relocation_directory_header.size));
+		if (!found_start)
+		{
+			continue;
+		}
 
-	image()->nt_headers()->optional_header.data_directories.basereloc_directory.size = static_cast<std::uint32_t>(new_directory.size());
+		if (bytes_covered >= old_dir_size)
+		{
+			break;
+		}
+
+		const auto sym_size = symbol->size();
+		const auto bytes_remaining = old_dir_size - bytes_covered;
+
+		if (sym_size > bytes_remaining)
+		{
+			tail = symbol->split(*this, bytes_remaining);
+		}
+
+		to_erase.push_back(symbol);
+		bytes_covered += std::min(sym_size, bytes_remaining);
+	}
+
+	for (const auto& symbol : to_erase)
+	{
+		erase_symbol(symbol);
+	}
+
+	const auto new_block = create_data_block(*section, new_directory, rva_t{ header.virtual_address });
+
+	if (tail)
+	{
+		tail->move_after(new_block);
+	}
 }
 
 bool binwrite::portable_executable_t::is_definitely_in_code_range(const rva_t rva) const

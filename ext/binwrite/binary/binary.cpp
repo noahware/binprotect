@@ -475,10 +475,48 @@ void binwrite::binary_t::recompile()
 		}
 	}
 
-	// todo: reserve bytes in buffer
-	std::vector<std::uint8_t> final_buffer;
-
 	const std::size_t alignment = section_alignment();
+
+	for (const auto& section : ordered_sections())
+	{
+		for (const auto& symbol : section->symbols())
+		{
+			if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
+			{
+				const auto nop = nop_instruction().value();
+				const std::vector<instruction_t> nops(8192, nop);
+				bb->insert(*this, nops, 1);
+			}
+		}
+	}
+
+	{
+		rva_t::value_type current = 0;
+
+		for (const auto& section : ordered_sections())
+		{
+			const rva_t section_rva{ current };
+
+			for (const auto& symbol : section->symbols())
+			{
+				symbol->set_rva(rva_t{ current });
+				current += symbol->size();
+			}
+
+			const auto section_size = current - section_rva.value();
+			const auto padding_needed = (alignment - (section_size % alignment)) % alignment;
+
+			section->set_rva(section_rva);
+			section->set_size(static_cast<section_t::size_type>(section_size));
+			section->set_padding(static_cast<section_t::size_type>(padding_needed));
+
+			current += static_cast<rva_t::value_type>(padding_needed);
+		}
+	}
+
+	update_relocations();
+
+	std::vector<std::uint8_t> final_buffer;
 
 	const auto get_current_rva = [&final_buffer]() -> rva_t
 		{
@@ -491,13 +529,6 @@ void binwrite::binary_t::recompile()
 
 		for (const auto& symbol : section->symbols())
 		{
-			if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
-			{
-				const auto nop = nop_instruction().value();
-				const std::vector<instruction_t> nops(8192, nop);
-				bb->insert(*this, nops, 1);
-			}
-
 			symbol->set_rva(get_current_rva());
 
 			symbol->emit_bytes(final_buffer);
@@ -527,7 +558,6 @@ void binwrite::binary_t::recompile()
 		}
 	}
 
-	update_relocations();
 	update_section_headers();
 }
 

@@ -133,5 +133,19 @@ void binwrite::portable_executable_t::update_section_headers()
 
 	nt_headers->optional_header.size_of_image = section_rva.value();
 
+	const auto reloc_va = nt_headers->optional_header.data_directories.basereloc_directory.virtual_address;
+	const auto reloc_it = disassembly_symbol_map_.find(reloc_va);
+
+	if (reloc_it != disassembly_symbol_map_.end())
+	{
+		if (const auto rva = reloc_it->second->rva())
+		{
+			nt_headers->optional_header.data_directories.basereloc_directory.virtual_address = rva->value();
+		}
+
+		nt_headers->optional_header.data_directories.basereloc_directory.size
+			= static_cast<std::uint32_t>(reloc_it->second->size());
+	}
+
 	std::memcpy(data(), headers_buffer.data(), headers_buffer.size());
 }
