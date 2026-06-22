@@ -1,6 +1,7 @@
 #include "pe.hpp"
 #include "../../block/basic_block.hpp"
 #include "../../util/serialize.hpp"
+#include "../symbols/symbols.hpp"
 
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -163,26 +164,69 @@ static std::vector<std::uint8_t> compile_relocation_directory(reloc_pages_t& rel
 
 void binwrite::portable_executable_t::update_relocations()
 {
-	const auto relocation_directory_header = image()->nt_headers()->optional_header.data_directories.basereloc_directory;
+	auto& basereloc_dir = image()->nt_headers()->optional_header.data_directories.basereloc_directory;
 
-	if (!relocation_directory_header.present())
+	if (!basereloc_dir.present())
 	{
 		return;
 	}
 
-	const rva_t directory_rva(relocation_directory_header.virtual_address);
+	const auto reloc_section = find_section(".reloc");
 
-	// <pfn, list of relocs for that page>
-	reloc_pages_t reloc_pages = collect_reloc_pages(relocations_);
+	if (!reloc_section)
+	{
+		return;
+	}
 
-	const auto new_directory = compile_relocation_directory(reloc_pages);
+	reloc_pages_t reloc_pages;
 
-	const rva_t erasal_rva(directory_rva.value() + static_cast<std::uint32_t>(new_directory.size()));
+	for (const auto& ref : symbol_refs_)
+	{
+		const auto dir64_ref = std::dynamic_pointer_cast<dir64_reloc_symbol_ref_t>(ref);
 
-	insert(directory_rva, new_directory);
-	erase(erasal_rva, static_cast<rva_t::size_type>(relocation_directory_header.size));
+		if (!dir64_ref)
+		{
+			continue;
+		}
 
-	image()->nt_headers()->optional_header.data_directories.basereloc_directory.size = static_cast<std::uint32_t>(new_directory.size());
+		const auto self_rva = dir64_ref->self()->rva();
+
+		if (!self_rva)
+		{
+			continue;
+		}
+
+		const auto rva_value = self_rva->value();
+		const auto pfn = rva_value >> 12;
+		const std::uint16_t offset = rva_value & 0xFFF;
+
+		reloc_pages[pfn].emplace_back(offset, portable_executable::relocation_type_t::dir64);
+	}
+
+	auto new_directory = compile_relocation_directory(reloc_pages);
+
+	const auto section_rva = reloc_section->rva().value();
+	const auto section_size = reloc_section->size();
+
+	if (new_directory.size() > section_size)
+	{
+		spdlog::error("new relocation directory ({} bytes) exceeds .reloc section size ({} bytes)",
+			new_directory.size(), section_size);
+
+		return;
+	}
+
+	auto* const dest = data() + section_rva;
+
+	std::memcpy(dest, new_directory.data(), new_directory.size());
+
+	if (new_directory.size() < section_size)
+	{
+		std::memset(dest + new_directory.size(), 0, section_size - new_directory.size());
+	}
+
+	basereloc_dir.virtual_address = section_rva;
+	basereloc_dir.size = static_cast<std::uint32_t>(new_directory.size());
 }
 
 bool binwrite::portable_executable_t::is_definitely_in_code_range(const rva_t rva) const
