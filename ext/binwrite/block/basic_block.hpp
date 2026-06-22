@@ -127,6 +127,7 @@ namespace binwrite
 		}
 
 		[[nodiscard]] std::shared_ptr<symbol_t> split(binary_t& binary, size_type byte_offset) override;
+		[[nodiscard]] std::shared_ptr<basic_block_t> split_at(binary_t& binary, size_type index);
 
 		void replace_instruction(const size_type index, instruction_t instruction)
 		{

@@ -217,16 +217,9 @@ void binwrite::basic_block_t::clear(binary_t& binary)
 	erase(binary, 0, count(), true);
 }
 
-std::shared_ptr<binwrite::symbol_t> binwrite::basic_block_t::split(binary_t& binary, const size_type byte_offset)
+std::shared_ptr<binwrite::basic_block_t> binwrite::basic_block_t::split_at(binary_t& binary, const size_type index)
 {
-	if (!byte_offset)
-	{
-		return { };
-	}
-
-	const auto index = index_from_byte_offset(byte_offset);
-
-	if (index == invalid_index)
+	if (index == 0 || index >= count())
 	{
 		return { };
 	}
@@ -245,5 +238,22 @@ std::shared_ptr<binwrite::symbol_t> binwrite::basic_block_t::split(binary_t& bin
 	new_basic_block->move_after(shared_from_this());
 
 	return new_basic_block;
+}
+
+std::shared_ptr<binwrite::symbol_t> binwrite::basic_block_t::split(binary_t& binary, const size_type byte_offset)
+{
+	if (!byte_offset)
+	{
+		return { };
+	}
+
+	const auto index = index_from_byte_offset(byte_offset);
+
+	if (index == invalid_index)
+	{
+		return { };
+	}
+
+	return split_at(binary, index);
 }
 
