@@ -484,7 +484,7 @@ void binwrite::binary_t::recompile()
 			if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
 			{
 				const auto nop = nop_instruction().value();
-				const std::vector<instruction_t> nops(8192, nop);
+				const std::vector<instruction_t> nops(1, nop);
 				bb->insert(*this, nops, 1);
 			}
 		}
@@ -532,8 +532,6 @@ void binwrite::binary_t::recompile()
 			symbol->set_rva(get_current_rva());
 
 			symbol->emit_bytes(final_buffer);
-
-			spdlog::info("emitted {} bytes in {}", symbol->size(), section_rva.value());
 		}
 
 		const std::size_t section_size = final_buffer.size() - section_rva.value();

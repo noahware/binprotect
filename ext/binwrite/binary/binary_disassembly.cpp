@@ -187,6 +187,11 @@ bool binwrite::binary_t::collect_basic_block_instructions(const disassembler_t& 
 
 	while (true)
 	{
+		if (instruction_rva.value() == 0x22B6)
+		{
+			__debugbreak();
+		}
+
 		constexpr std::size_t max_padding_count = 16;
 
 		if (instruction_rva.value() + max_padding_count <= buffer_.size())
@@ -581,7 +586,7 @@ void binwrite::binary_t::populate_code_symbol_refs()
 		const rva_t self_rva = code_ref.self();
 		const rva_t::value_type target_value = code_ref.target()->value();
 
-		if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+		if (!is_rva_valid(rva_t{ target_value }))
 		{
 			continue;
 		}
