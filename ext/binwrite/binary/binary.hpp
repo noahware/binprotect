@@ -111,6 +111,19 @@ namespace binwrite
 		[[nodiscard]] std::shared_ptr<rva_ref_t> find_rva_ref(rva_t ref_rva, bool must_be_code_reference = false) const;
 		[[nodiscard]] std::vector<std::shared_ptr<rva_ref_t>> find_all_targetted_rva_refs(rva_t target_rva) const;
 
+		template <class T>
+		[[nodiscard]] std::shared_ptr<T> find_symbol_ref(const rva_t self_rva) const
+		{
+			const auto it = symbol_ref_map_.find(self_rva.value());
+
+			if (it == symbol_ref_map_.end())
+			{
+				return { };
+			}
+
+			return std::dynamic_pointer_cast<T>(it->second);
+		}
+
 		std::shared_ptr<rva_t> add_rva(rva_t::value_type value, bool force_inclusive = false);
 		std::shared_ptr<rva_t> add_rva(rva_t rva, bool force_inclusive = false);
 
@@ -165,6 +178,9 @@ namespace binwrite
 		void split_basic_blocks_in_data();
 		void populate_data_symbol_refs();
 		void populate_code_symbol_refs();
+		void populate_dir64_reloc_symbol_refs();
+		void populate_llvm_jmp_table_symbol_refs();
+		void populate_fh4_encoded_symbol_refs();
 
 		void process_instruction_rip_relativity(const disassembled_instruction_t& disassembled_instruction,
 		                                        rva_t instruction_rva, rva_t next_instruction_rva,
@@ -205,6 +221,7 @@ namespace binwrite
 
 		std::vector<std::shared_ptr<symbol_t>> symbols_;
 		std::vector<std::shared_ptr<symbol_ref_t>> symbol_refs_;
+		std::unordered_map<rva_t::value_type, std::shared_ptr<symbol_ref_t>> symbol_ref_map_;
 
 		std::vector<std::shared_ptr<rva_t>> rva_blocks_;
 

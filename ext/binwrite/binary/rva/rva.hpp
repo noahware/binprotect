@@ -174,6 +174,11 @@ namespace binwrite
 
 		std::expected<void, error_t> update_reference(binary_t& binary) override;
 
+		[[nodiscard]] std::shared_ptr<rva_t> table_base() const noexcept
+		{
+			return table_base_;
+		}
+
 	protected:
 		std::shared_ptr<rva_t> table_base_;
 	};
@@ -205,6 +210,16 @@ namespace binwrite
 					size_(encoded_size) { }
 
 		std::expected<void, error_t> update_reference(binary_t& binary) override;
+
+		[[nodiscard]] std::shared_ptr<rva_t> previous_entry_target() const noexcept
+		{
+			return previous_entry_target_;
+		}
+
+		[[nodiscard]] std::uint32_t encoded_size() const noexcept
+		{
+			return size_;
+		}
 
 	protected:
 		std::shared_ptr<rva_t> chunk_rva_;

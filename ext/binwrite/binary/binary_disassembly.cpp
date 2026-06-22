@@ -679,12 +679,334 @@ void binwrite::binary_t::populate_code_symbol_refs()
 	spdlog::info("code symbol refs: {} (from {} candidates)", code_ref_count, candidates.size());
 }
 
+void binwrite::binary_t::populate_dir64_reloc_symbol_refs()
+{
+	struct candidate_t
+	{
+		rva_t self_rva;
+		rva_t::value_type target_rva_value;
+	};
+
+	std::vector<candidate_t> candidates;
+
+	for (const auto& ref : rva_refs_)
+	{
+		if (typeid(*ref) != typeid(pe_dir64_reloc_t))
+		{
+			continue;
+		}
+
+		const rva_t self_rva = ref->self();
+		const rva_t::value_type target_value = ref->target()->value();
+
+		if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+		{
+			continue;
+		}
+
+		candidates.push_back({ self_rva, target_value });
+	}
+
+	std::ranges::sort(candidates, [](const auto& a, const auto& b)
+	{
+		return a.self_rva < b.self_rva;
+	});
+
+	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
+	{
+		auto containing = find_containing_symbol(rva);
+
+		if (!containing)
+		{
+			return { };
+		}
+
+		const auto containing_rva = containing->rva();
+
+		if (!containing_rva)
+		{
+			return { };
+		}
+
+		if (*containing_rva == rva)
+		{
+			return containing;
+		}
+
+		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
+
+		auto new_symbol = containing->split(*this, byte_offset);
+
+		if (!new_symbol)
+		{
+			return { };
+		}
+
+		new_symbol->set_rva(rva);
+		disassembly_symbol_map_[rva.value()] = new_symbol;
+
+		return new_symbol;
+	};
+
+	for (const auto& candidate : candidates)
+	{
+		auto self_symbol = find_or_split_symbol(candidate.self_rva);
+
+		if (!self_symbol)
+		{
+			continue;
+		}
+
+		const rva_t target_rva{ candidate.target_rva_value };
+
+		auto target_symbol = find_or_split_symbol(target_rva);
+
+		if (!target_symbol)
+		{
+			continue;
+		}
+
+		auto symbol_ref = std::make_shared<dir64_reloc_symbol_ref_t>(target_symbol, self_symbol);
+
+		symbol_refs_.push_back(symbol_ref);
+		symbol_ref_map_[candidate.self_rva.value()] = symbol_ref;
+	}
+
+	spdlog::info("dir64 reloc symbol refs: {}", candidates.size());
+}
+
+void binwrite::binary_t::populate_llvm_jmp_table_symbol_refs()
+{
+	struct candidate_t
+	{
+		rva_t self_rva;
+		rva_t::value_type target_rva_value;
+		rva_t::value_type table_base_rva_value;
+	};
+
+	std::vector<candidate_t> candidates;
+
+	for (const auto& ref : rva_refs_)
+	{
+		if (typeid(*ref) != typeid(llvm_jmp_table_entry_t))
+		{
+			continue;
+		}
+
+		const auto& entry = static_cast<const llvm_jmp_table_entry_t&>(*ref);
+
+		const rva_t self_rva = entry.self();
+		const rva_t::value_type target_value = entry.target()->value();
+
+		if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+		{
+			continue;
+		}
+
+		candidates.push_back({ self_rva, target_value, entry.table_base()->value() });
+	}
+
+	std::ranges::sort(candidates, [](const auto& a, const auto& b)
+	{
+		return a.self_rva < b.self_rva;
+	});
+
+	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
+	{
+		auto containing = find_containing_symbol(rva);
+
+		if (!containing)
+		{
+			return { };
+		}
+
+		const auto containing_rva = containing->rva();
+
+		if (!containing_rva)
+		{
+			return { };
+		}
+
+		if (*containing_rva == rva)
+		{
+			return containing;
+		}
+
+		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
+
+		auto new_symbol = containing->split(*this, byte_offset);
+
+		if (!new_symbol)
+		{
+			return { };
+		}
+
+		new_symbol->set_rva(rva);
+		disassembly_symbol_map_[rva.value()] = new_symbol;
+
+		return new_symbol;
+	};
+
+	std::unordered_map<rva_t::value_type, std::shared_ptr<symbol_t>> table_base_cache;
+
+	std::size_t count = 0;
+
+	for (const auto& candidate : candidates)
+	{
+		auto self_symbol = find_or_split_symbol(candidate.self_rva);
+
+		if (!self_symbol)
+		{
+			continue;
+		}
+
+		const rva_t target_rva{ candidate.target_rva_value };
+
+		auto target_symbol = find_or_split_symbol(target_rva);
+
+		if (!target_symbol)
+		{
+			continue;
+		}
+
+		auto& table_base_symbol = table_base_cache[candidate.table_base_rva_value];
+
+		if (!table_base_symbol)
+		{
+			table_base_symbol = find_or_split_symbol(rva_t{ candidate.table_base_rva_value });
+
+			if (!table_base_symbol)
+			{
+				continue;
+			}
+		}
+
+		auto symbol_ref = std::make_shared<llvm_jmp_table_symbol_ref_t>(target_symbol, self_symbol, table_base_symbol);
+
+		symbol_refs_.push_back(symbol_ref);
+		symbol_ref_map_[candidate.self_rva.value()] = symbol_ref;
+		count++;
+	}
+
+	spdlog::info("llvm jmp table symbol refs: {}", count);
+}
+
+void binwrite::binary_t::populate_fh4_encoded_symbol_refs()
+{
+	struct candidate_t
+	{
+		rva_t self_rva;
+		rva_t::value_type target_rva_value;
+		rva_t::value_type previous_target_rva_value;
+		std::uint32_t encoded_size;
+	};
+
+	std::vector<candidate_t> candidates;
+
+	for (const auto& ref : rva_refs_)
+	{
+		if (typeid(*ref) != typeid(pe_fh4_encoded_entry_t))
+		{
+			continue;
+		}
+
+		const auto& entry = static_cast<const pe_fh4_encoded_entry_t&>(*ref);
+
+		const rva_t self_rva = entry.self();
+		const rva_t::value_type target_value = entry.target()->value();
+
+		candidates.push_back({ self_rva, target_value, entry.previous_entry_target()->value(), entry.encoded_size() });
+	}
+
+	std::ranges::sort(candidates, [](const auto& a, const auto& b)
+	{
+		return a.self_rva < b.self_rva;
+	});
+
+	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
+	{
+		auto containing = find_containing_symbol(rva);
+
+		if (!containing)
+		{
+			return { };
+		}
+
+		const auto containing_rva = containing->rva();
+
+		if (!containing_rva)
+		{
+			return { };
+		}
+
+		if (*containing_rva == rva)
+		{
+			return containing;
+		}
+
+		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
+
+		auto new_symbol = containing->split(*this, byte_offset);
+
+		if (!new_symbol)
+		{
+			return { };
+		}
+
+		new_symbol->set_rva(rva);
+		disassembly_symbol_map_[rva.value()] = new_symbol;
+
+		return new_symbol;
+	};
+
+	std::size_t count = 0;
+
+	for (const auto& candidate : candidates)
+	{
+		auto self_symbol = find_or_split_symbol(candidate.self_rva);
+
+		if (!self_symbol)
+		{
+			continue;
+		}
+
+		const rva_t target_rva{ candidate.target_rva_value };
+
+		auto target_symbol = find_or_split_symbol(target_rva);
+
+		if (!target_symbol)
+		{
+			continue;
+		}
+
+		const rva_t prev_rva{ candidate.previous_target_rva_value };
+
+		auto prev_symbol = find_or_split_symbol(prev_rva);
+
+		if (!prev_symbol)
+		{
+			continue;
+		}
+
+		auto symbol_ref = std::make_shared<fh4_encoded_symbol_ref_t>(target_symbol, self_symbol, prev_symbol);
+
+		symbol_refs_.push_back(symbol_ref);
+		symbol_ref_map_[candidate.self_rva.value()] = symbol_ref;
+		count++;
+	}
+
+	spdlog::info("fh4 encoded symbol refs: {}", count);
+}
+
 void binwrite::binary_t::disassemble()
 {
 	process_disassembly_queue();
 	fill_code_section_empty_space();
 	populate_data_symbol_refs();
 	populate_code_symbol_refs();
+	populate_dir64_reloc_symbol_refs();
+	populate_llvm_jmp_table_symbol_refs();
+	populate_fh4_encoded_symbol_refs();
 	assign_function_basic_blocks();
 
 	spdlog::info("basic block count: {}", basic_blocks_.size());

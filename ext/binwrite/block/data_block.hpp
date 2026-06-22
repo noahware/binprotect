@@ -27,6 +27,11 @@ namespace binwrite
 
 		[[nodiscard]] std::shared_ptr<symbol_t> split(binary_t& binary, size_type byte_offset) override;
 
+		void resize(const size_type new_size)
+		{
+			bytes_.resize(new_size, 0);
+		}
+
 	protected:
 		std::vector<std::uint8_t> bytes_;
 	};

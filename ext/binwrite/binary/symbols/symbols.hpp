@@ -134,4 +134,48 @@ namespace binwrite
 	protected:
 		[[nodiscard]] std::int32_t compute_displacement(rva_t self_rva, rva_t target_rva) const override;
 	};
+
+	class dir64_reloc_symbol_ref_t : public symbol_ref_t
+	{
+	public:
+		dir64_reloc_symbol_ref_t(std::shared_ptr<symbol_t> target, std::shared_ptr<symbol_t> self)
+				:	symbol_ref_t(std::move(target), std::move(self), 8)
+		{
+		}
+
+		bool patch_reference(binary_t& binary) override;
+	};
+
+	class llvm_jmp_table_symbol_ref_t : public symbol_ref_t
+	{
+	public:
+		llvm_jmp_table_symbol_ref_t(std::shared_ptr<symbol_t> target, std::shared_ptr<symbol_t> self,
+		                            std::shared_ptr<symbol_t> table_base)
+				:	symbol_ref_t(std::move(target), std::move(self), 4),
+					table_base_(std::move(table_base))
+		{
+		}
+
+		bool patch_reference(binary_t& binary) override;
+
+	protected:
+		std::shared_ptr<symbol_t> table_base_;
+	};
+
+	class fh4_encoded_symbol_ref_t : public symbol_ref_t
+	{
+	public:
+		fh4_encoded_symbol_ref_t(std::shared_ptr<symbol_t> target, std::shared_ptr<symbol_t> self,
+		                         std::shared_ptr<symbol_t> previous_target)
+				:	symbol_ref_t(std::move(target), std::move(self), 5),
+					previous_target_(std::move(previous_target))
+		{
+		}
+
+		bool patch_reference(binary_t& binary) override;
+		bool widen_encoding() override;
+
+	protected:
+		std::shared_ptr<symbol_t> previous_target_;
+	};
 }
