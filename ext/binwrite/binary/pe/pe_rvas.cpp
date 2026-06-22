@@ -262,7 +262,7 @@ void binwrite::portable_executable_t::add_relocation_rvas(const portable_executa
 				continue;
 			}
 
-			relocations_.push_back(std::make_shared<pe_relocation_t>(rva, type));
+			relocations_.push_back(std::make_shared<pe_relocation_t>(find_or_split_symbol(*rva), type));
 
 			if (type == portable_executable::relocation_type_t::dir64)
 			{

@@ -92,12 +92,18 @@ static reloc_pages_t collect_reloc_pages(const std::span<const std::shared_ptr<b
 
 	for (const auto& relocation : relocations)
 	{
-		const auto target = relocation->target();
-		const auto pfn = target.value() >> 12;
+		const auto target_rva = relocation->target()->rva();
+
+		if (!target_rva)
+		{
+			continue;
+		}
+
+		const auto pfn = target_rva->value() >> 12;
 
 		auto& page_entry = reloc_pages[pfn];
 
-		const std::uint16_t offset = target.value() & 0xFFF;
+		const std::uint16_t offset = target_rva->value() & 0xFFF;
 
 		page_entry.emplace_back(offset, static_cast<portable_executable::relocation_type_t>(relocation->type()));
 	}

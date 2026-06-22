@@ -171,6 +171,7 @@ namespace binwrite
 		virtual bool is_definitely_in_code_range(rva_t rva) const = 0;
 
 		std::shared_ptr<symbol_t> find_containing_symbol(rva_t rva) const;
+		std::shared_ptr<symbol_t> find_or_split_symbol(rva_t rva);
 		void fill_code_section_empty_space();
 		void erase_symbol(std::shared_ptr<symbol_t> symbol);
 		void clear_symbol_rvas();

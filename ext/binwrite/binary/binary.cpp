@@ -527,6 +527,7 @@ void binwrite::binary_t::recompile()
 		}
 	}
 
+	update_relocations();
 	update_section_headers();
 }
 

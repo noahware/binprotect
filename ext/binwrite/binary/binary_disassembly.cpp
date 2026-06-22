@@ -280,6 +280,37 @@ std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_containing_symbol(c
 	return candidate;
 }
 
+std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_or_split_symbol(const rva_t rva)
+{
+	auto containing = find_containing_symbol(rva);
+
+	if (!containing)
+	{
+		return { };
+	}
+
+	const auto containing_rva = containing->rva();
+
+	if (!containing_rva || *containing_rva == rva)
+	{
+		return containing;
+	}
+
+	const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
+
+	auto new_symbol = containing->split(*this, byte_offset);
+
+	if (!new_symbol)
+	{
+		return { };
+	}
+
+	new_symbol->set_rva(rva);
+	disassembly_symbol_map_[rva.value()] = new_symbol;
+
+	return new_symbol;
+}
+
 void binwrite::binary_t::fill_code_section_empty_space()
 {
 	for (const auto& section : sections_ | std::views::values)
@@ -495,42 +526,6 @@ void binwrite::binary_t::populate_data_symbol_refs()
 		return a.self_rva < b.self_rva;
 	});
 
-	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
-	{
-		auto containing = find_containing_symbol(rva);
-
-		if (!containing)
-		{
-			return { };
-		}
-
-		const auto containing_rva = containing->rva();
-
-		if (!containing_rva)
-		{
-			return { };
-		}
-
-		if (*containing_rva == rva)
-		{
-			return containing;
-		}
-
-		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
-
-		auto new_symbol = containing->split(*this, byte_offset);
-
-		if (!new_symbol)
-		{
-			return { };
-		}
-
-		new_symbol->set_rva(rva);
-		disassembly_symbol_map_[rva.value()] = new_symbol;
-
-		return new_symbol;
-	};
-
 	for (const auto& candidate : candidates)
 	{
 		auto self_symbol = find_or_split_symbol(candidate.self_rva);
@@ -598,42 +593,6 @@ void binwrite::binary_t::populate_code_symbol_refs()
 	{
 		return a.self_rva < b.self_rva;
 	});
-
-	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
-	{
-		auto containing = find_containing_symbol(rva);
-
-		if (!containing)
-		{
-			return { };
-		}
-
-		const auto containing_rva = containing->rva();
-
-		if (!containing_rva)
-		{
-			return { };
-		}
-
-		if (*containing_rva == rva)
-		{
-			return containing;
-		}
-
-		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
-
-		auto new_symbol = containing->split(*this, byte_offset);
-
-		if (!new_symbol)
-		{
-			return { };
-		}
-
-		new_symbol->set_rva(rva);
-		disassembly_symbol_map_[rva.value()] = new_symbol;
-
-		return new_symbol;
-	};
 
 	for (const auto& candidate : candidates)
 	{
@@ -711,42 +670,6 @@ void binwrite::binary_t::populate_dir64_reloc_symbol_refs()
 	{
 		return a.self_rva < b.self_rva;
 	});
-
-	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
-	{
-		auto containing = find_containing_symbol(rva);
-
-		if (!containing)
-		{
-			return { };
-		}
-
-		const auto containing_rva = containing->rva();
-
-		if (!containing_rva)
-		{
-			return { };
-		}
-
-		if (*containing_rva == rva)
-		{
-			return containing;
-		}
-
-		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
-
-		auto new_symbol = containing->split(*this, byte_offset);
-
-		if (!new_symbol)
-		{
-			return { };
-		}
-
-		new_symbol->set_rva(rva);
-		disassembly_symbol_map_[rva.value()] = new_symbol;
-
-		return new_symbol;
-	};
 
 	for (const auto& candidate : candidates)
 	{

@@ -11,7 +11,7 @@ namespace binwrite
 	public:
 		pe_relocation_t() = default;
 
-		explicit pe_relocation_t(std::shared_ptr<rva_t> target, const portable_executable::relocation_type_t type)
+		explicit pe_relocation_t(std::shared_ptr<symbol_t> target, const portable_executable::relocation_type_t type)
 				:	relocation_t(std::move(target)),
 					type_(type) { }
 
