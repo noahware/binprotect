@@ -163,7 +163,7 @@ std::optional<binwrite::assembler_instruction_t> binwrite::make_assembler_instru
 	const ZyanU8 operand_count = static_cast<ZyanU8>(decoded_operands.size());
 
 	ZydisEncoderRequest request;
-		
+
 	const auto status = ZydisEncoderDecodedInstructionToEncoderRequest(&decoded_instruction, decoded_operands.data(), operand_count, &request);
 
 	if (!ZYAN_SUCCESS(status))

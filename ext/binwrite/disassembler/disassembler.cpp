@@ -53,6 +53,32 @@ bool binwrite::disassembler_t::decode_operands(const ZydisDecoderContext* const 
 	return ZYAN_SUCCESS(status);
 }
 
+std::optional<std::uint8_t> binwrite::find_displacement_offset(const std::uint8_t* const instruction, const std::uint32_t size)
+{
+	ZydisDecoder decoder;
+	ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
+
+	ZydisDecodedInstruction decoded;
+	ZydisDecoderContext context;
+
+	if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder, &context, instruction, size, &decoded)))
+	{
+		return std::nullopt;
+	}
+
+	if (decoded.raw.disp.size == 32)
+	{
+		return decoded.raw.disp.offset;
+	}
+
+	if ((decoded.attributes & ZYDIS_ATTRIB_IS_RELATIVE) && decoded.raw.imm[0].size == 32)
+	{
+		return decoded.raw.imm[0].offset;
+	}
+
+	return std::nullopt;
+}
+
 std::optional<std::uint32_t> binwrite::resolve_instruction_rva(const disassembled_instruction_t& instruction,
                                                                const rva_t instruction_rva)
 {

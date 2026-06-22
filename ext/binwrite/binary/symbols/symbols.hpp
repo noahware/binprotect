@@ -123,7 +123,7 @@ namespace binwrite
 		bool widen_encoding() override;
 
 	protected:
-		virtual bool update_displacement(assembler_instruction_t& instruction, rva_t instruction_rva) const;
+		[[nodiscard]] virtual std::int32_t compute_displacement(rva_t self_rva, rva_t target_rva) const;
 	};
 
 	class msvc_jmp_table_symbol_ref_t : public code_symbol_ref_t
@@ -132,6 +132,6 @@ namespace binwrite
 		using code_symbol_ref_t::code_symbol_ref_t;
 
 	protected:
-		bool update_displacement(assembler_instruction_t& instruction, rva_t instruction_rva) const override;
+		[[nodiscard]] std::int32_t compute_displacement(rva_t self_rva, rva_t target_rva) const override;
 	};
 }

@@ -25,4 +25,6 @@ namespace binwrite
 	};
 
 	std::optional<std::uint32_t> resolve_instruction_rva(const disassembled_instruction_t& instruction, rva_t instruction_rva);
+
+	std::optional<std::uint8_t> find_displacement_offset(const std::uint8_t* instruction, std::uint32_t size);
 }
