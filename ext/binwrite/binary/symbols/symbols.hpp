@@ -51,9 +51,9 @@ namespace binwrite
 
 		void move_after(const std::shared_ptr<symbol_t>& location)
 		{
-			const auto current_section = section();
+			const auto destination_section = location->section();
 
-			current_section->move_symbol_after(location, shared_from_this());
+			destination_section->move_symbol_after(location, shared_from_this());
 		}
 
 	protected:

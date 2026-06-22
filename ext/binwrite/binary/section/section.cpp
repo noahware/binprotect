@@ -16,9 +16,11 @@ void binwrite::section_t::move_symbol_after(const std::shared_ptr<symbol_t>& loc
 		return;
 	}
 
+	const auto source_section = movable_symbol->section();
 	const auto next = std::next(location->list_iterator_);
 
-	symbols_.splice(next, symbols_, movable_symbol->list_iterator_);
+	symbols_.splice(next, source_section->symbols_, movable_symbol->list_iterator_);
+	movable_symbol->section_ = location->section_;
 }
 
 binwrite::section_t::section_t(binary_t& binary, const rva_t rva, const size_type size, const size_type padding,

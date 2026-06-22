@@ -478,7 +478,7 @@ void binwrite::binary_t::recompile()
 		}
 
 		const std::size_t section_size = final_buffer.size() - section_rva.value();
-		const std::size_t padding_needed = alignment - (section_size % alignment);
+		const std::size_t padding_needed = (alignment - (section_size % alignment)) % alignment;
 
 		section->set_rva(section_rva);
 		section->set_size(static_cast<section_t::size_type>(section_size));
@@ -486,6 +486,8 @@ void binwrite::binary_t::recompile()
 
 		final_buffer.insert(final_buffer.end(), padding_needed, section->padding_value());
 	}
+
+	buffer_ = std::move(final_buffer);
 
 	for (const auto& symbol_ref : symbol_refs_)
 	{
@@ -496,8 +498,6 @@ void binwrite::binary_t::recompile()
 			return;
 		}
 	}
-
-	buffer_ = std::move(final_buffer);
 
 	update_section_headers();
 }
