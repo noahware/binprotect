@@ -8,7 +8,11 @@ void binwrite::portable_executable_t::find_sections()
 	const auto section_headers = nt_headers->section_headers();
 	const auto section_count = nt_headers->file_header.number_of_sections;
 
-	sections_[{}] = std::make_shared<section_t>(*this, rva_t{ 0 }, nt_headers->optional_header.size_of_headers, 0, false, true);
+	const auto headers_size = nt_headers->optional_header.size_of_headers;
+	const auto headers_section = std::make_shared<section_t>(rva_t{ 0 }, headers_size, 0, false, true);
+
+	sections_[{}] = headers_section;
+	create_data_block(*headers_section, std::span{ data(), headers_size }, rva_t{ 0 });
 
 	for (std::uint16_t i = 0; i < section_count; i++)
 	{
@@ -26,7 +30,14 @@ void binwrite::portable_executable_t::find_sections()
 		const auto total_size = next_virtual_address - virtual_address;
 		const auto padding_size = total_size - section->virtual_size;
 
-		sections_[section_name] = std::make_shared<section_t>(*this, rva_t{ virtual_address }, section->virtual_size, padding_size, code_section);
+		auto new_section = std::make_shared<section_t>(rva_t{ virtual_address }, section->virtual_size, padding_size, code_section);
+
+		sections_[section_name] = new_section;
+
+		if (!code_section)
+		{
+			create_data_block(*new_section, std::span{ data() + virtual_address, section->virtual_size }, rva_t{ virtual_address });
+		}
 	}
 }
 

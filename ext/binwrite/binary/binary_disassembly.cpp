@@ -1,6 +1,7 @@
 #include "binary.hpp"
 
 #include <algorithm>
+#include <typeinfo>
 #include <spdlog/spdlog.h>
 
 static void process_function_basic_block(const binwrite::binary_t& binary,
@@ -458,10 +459,111 @@ void binwrite::binary_t::split_basic_blocks_in_data()
 	}
 }
 
+void binwrite::binary_t::populate_data_symbol_refs()
+{
+	struct convertible_ref_t
+	{
+		rva_t self_rva;
+		rva_t::value_type target_rva_value;
+		data_rva_ref_t::size_type encoding_size;
+	};
+
+	std::vector<convertible_ref_t> candidates;
+
+	for (const auto& ref : rva_refs_)
+	{
+		if (typeid(*ref) != typeid(data_rva_ref_t))
+		{
+			continue;
+		}
+
+		const auto& data_ref = static_cast<const data_rva_ref_t&>(*ref);
+
+		const rva_t self_rva = data_ref.self();
+		const rva_t::value_type target_value = data_ref.target()->value();
+
+		if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+		{
+			continue;
+		}
+
+		candidates.push_back({ self_rva, target_value, data_ref.encoding_size() });
+	}
+
+	std::ranges::sort(candidates, [](const auto& a, const auto& b)
+	{
+		return a.self_rva < b.self_rva;
+	});
+
+	const auto find_or_split_symbol = [this](const rva_t rva) -> std::shared_ptr<symbol_t>
+	{
+		auto containing = find_containing_symbol(rva);
+
+		if (!containing)
+		{
+			return { };
+		}
+
+		const auto containing_rva = containing->rva();
+
+		if (!containing_rva)
+		{
+			return { };
+		}
+
+		if (*containing_rva == rva)
+		{
+			return containing;
+		}
+
+		const auto byte_offset = static_cast<symbol_t::size_type>(rva.value() - containing_rva->value());
+
+		auto new_symbol = containing->split(*this, byte_offset);
+
+		if (!new_symbol)
+		{
+			return { };
+		}
+
+		new_symbol->set_rva(rva);
+		disassembly_symbol_map_[rva.value()] = new_symbol;
+
+		return new_symbol;
+	};
+
+	for (const auto& candidate : candidates)
+	{
+		auto self_symbol = find_or_split_symbol(candidate.self_rva);
+
+		if (!self_symbol)
+		{
+			continue;
+		}
+
+		const rva_t target_rva{ candidate.target_rva_value };
+
+		auto target_symbol = find_or_split_symbol(target_rva);
+
+		if (!target_symbol)
+		{
+			continue;
+		}
+
+		symbol_refs_.push_back(std::make_shared<data_symbol_ref_t>(
+			target_symbol,
+			self_symbol,
+			static_cast<symbol_ref_t::size_type>(candidate.encoding_size)
+		));
+	}
+
+	spdlog::info("data symbol refs: {}", symbol_refs_.size());
+}
+
 void binwrite::binary_t::disassemble()
 {
 	process_disassembly_queue();
 	fill_code_section_empty_space();
+	populate_data_symbol_refs();
 	assign_function_basic_blocks();
 
 	spdlog::info("basic block count: {}", basic_blocks_.size());

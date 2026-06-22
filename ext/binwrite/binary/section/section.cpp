@@ -4,6 +4,8 @@
 
 void binwrite::section_t::add_symbol(std::shared_ptr<symbol_t> symbol)
 {
+	symbol->section_ = weak_from_this();
+
 	const auto it = symbols_.insert(symbols_.end(), std::move(symbol));
 
 	(*it)->list_iterator_ = it;
@@ -23,7 +25,7 @@ void binwrite::section_t::move_symbol_after(const std::shared_ptr<symbol_t>& loc
 	movable_symbol->section_ = location->section_;
 }
 
-binwrite::section_t::section_t(binary_t& binary, const rva_t rva, const size_type size, const size_type padding,
+binwrite::section_t::section_t(const rva_t rva, const size_type size, const size_type padding,
                                const bool code_section, const bool headers_section)
 		:	rva_(rva),
 			size_(size),
@@ -31,10 +33,6 @@ binwrite::section_t::section_t(binary_t& binary, const rva_t rva, const size_typ
 		    code_(code_section),
 		    headers_(headers_section)
 {
-	if (!code_section)
-	{
-		binary.create_data_block(*this, std::span{ binary.data() + rva.value(), size }, rva);
-	}
 }
 
 void binwrite::section_t::process_disruption(const rva_t disruption_rva, const rva_t::size_type disruption_size)

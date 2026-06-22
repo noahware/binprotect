@@ -163,6 +163,7 @@ namespace binwrite
 		void clear_symbol_rvas();
 		void process_disassembly_queue();
 		void split_basic_blocks_in_data();
+		void populate_data_symbol_refs();
 
 		void process_instruction_rip_relativity(const disassembled_instruction_t& disassembled_instruction,
 		                                        rva_t instruction_rva, rva_t next_instruction_rva,

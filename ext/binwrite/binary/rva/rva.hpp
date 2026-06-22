@@ -139,6 +139,11 @@ namespace binwrite
 
 		std::expected<void, error_t> update_reference(binary_t& binary) override;
 
+		[[nodiscard]] size_type encoding_size() const noexcept
+		{
+			return size_;
+		}
+
 	protected:
 		size_type size_ = 0;
 	};

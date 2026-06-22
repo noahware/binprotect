@@ -107,6 +107,8 @@ namespace binwrite
 	class data_symbol_ref_t : public symbol_ref_t
 	{
 	public:
+		using symbol_ref_t::symbol_ref_t;
+
 		bool patch_reference(binary_t& binary) override;
 	};
 }

@@ -11,14 +11,14 @@ namespace binwrite
 
 	using symbol_list_t = std::list<std::shared_ptr<symbol_t>>;
 
-	class section_t
+	class section_t : public std::enable_shared_from_this<section_t>
 	{
 	public:
 		using size_type = std::uint32_t;
 
 		section_t() = default;
 
-		explicit section_t(binary_t& binary, rva_t rva, size_type size, size_type padding, bool code_section,
+		explicit section_t(rva_t rva, size_type size, size_type padding, bool code_section,
 		                   bool headers_section = false);
 
 		void process_disruption(rva_t disruption_rva, rva_t::size_type disruption_size);
