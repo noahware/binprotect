@@ -493,8 +493,9 @@ void binwrite::binary_t::recompile()
 		{
 			if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
 			{
-				for (size_t i = 0; i < 8192; i++)
-					bb->insert(*this, nop_instruction().value(), 1);
+				const auto nop = nop_instruction().value();
+				const std::vector<instruction_t> nops(8192, nop);
+				bb->insert(*this, nops, 1);
 			}
 
 			symbol->set_rva(get_current_rva());

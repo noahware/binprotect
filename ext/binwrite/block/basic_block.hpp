@@ -21,7 +21,10 @@ namespace binwrite
 		explicit basic_block_t(const std::span<const instruction_t> instructions)
 				:	instructions_(instructions.begin(), instructions.end())
 		{
-			rebuild_offsets();
+			for (const auto& instruction : instructions_)
+			{
+				total_size_ += instruction.size();
+			}
 		}
 
 		[[nodiscard]] std::shared_ptr<rva_t> rva() const
@@ -127,18 +130,17 @@ namespace binwrite
 
 		void replace_instruction(const size_type index, instruction_t instruction)
 		{
-			instructions_.at(index) = std::move(instruction);
-			rebuild_offsets();
+			auto& old_instruction = instructions_.at(index);
+			total_size_ -= old_instruction.size();
+			old_instruction = std::move(instruction);
+			total_size_ += old_instruction.size();
 		}
 
 	protected:
 		size_type index_from_byte_offset(size_type byte_offset) const;
 
-		void rebuild_offsets();
-
 		std::shared_ptr<rva_t> rva_;
 		std::vector<instruction_t> instructions_;
-		std::vector<rva_t::value_type> instruction_offsets_;
 		rva_t::value_type total_size_ = 0;
 
 		bool skip_ = false;
