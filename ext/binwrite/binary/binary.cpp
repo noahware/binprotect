@@ -528,7 +528,6 @@ void binwrite::binary_t::recompile()
 	}
 
 	update_section_headers();
-	update_relocations();
 }
 
 void binwrite::binary_t::reindex_functions() const
