@@ -110,6 +110,25 @@ void binwrite::section_t::add_padding(const size_type size)
 	padding_ += size;
 }
 
+void binwrite::section_t::remove_symbol(const std::shared_ptr<symbol_t>& symbol)
+{
+	symbols_.erase(symbol->list_iterator_);
+}
+
+void binwrite::section_t::sort_by_rva()
+{
+	symbols_.sort([](const std::shared_ptr<symbol_t>& a, const std::shared_ptr<symbol_t>& b)
+	{
+		const auto a_rva = a->rva();
+		const auto b_rva = b->rva();
+
+		if (!a_rva) return false;
+		if (!b_rva) return true;
+
+		return a_rva->value() < b_rva->value();
+	});
+}
+
 bool binwrite::section_t::contains(const rva_t rva) const
 {
 	const auto section_start = rva_;

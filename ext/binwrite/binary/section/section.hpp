@@ -57,6 +57,8 @@ namespace binwrite
 		}
 
 		void move_symbol_after(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol);
+		void remove_symbol(const std::shared_ptr<symbol_t>& symbol);
+		void sort_by_rva();
 
 	protected:
 		symbol_list_t symbols_;

@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <ranges>
 
+#include "../../../src/assembler/assembler.hpp"
+
 void binwrite::binary_t::parse()
 {
 	find_sections();
@@ -89,6 +91,11 @@ std::shared_ptr<binwrite::data_block_t> binwrite::binary_t::create_data_block(
 	section.add_symbol(data_block);
 	symbols_.push_back(data_block);
 
+	if (rva)
+	{
+		disassembly_symbol_map_[rva->value()] = data_block;
+	}
+
 	return data_block;
 }
 
@@ -101,6 +108,13 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
 
 	section.add_symbol(basic_block);
 	symbols_.push_back(basic_block);
+	basic_blocks_.push_back(basic_block);
+	bb_index_dirty_ = true;
+
+	if (rva)
+	{
+		disassembly_symbol_map_[rva->value()] = basic_block;
+	}
 
 	return basic_block;
 }
@@ -435,8 +449,15 @@ void binwrite::binary_t::reindex_basic_blocks() const
 
 	for (const auto& basic_block : basic_blocks_)
 	{
-		bb_index_[basic_block->rva()->value()] = basic_block;
-		bb_interval_index_[basic_block->rva()->value()] = basic_block;
+		const auto rva = basic_block->rva();
+
+		if (!rva)
+		{
+			continue;
+		}
+
+		bb_index_[rva->value()] = basic_block;
+		bb_interval_index_[rva->value()] = basic_block;
 	}
 
 	bb_index_dirty_ = false;
@@ -470,6 +491,12 @@ void binwrite::binary_t::recompile()
 
 		for (const auto& symbol : section->symbols())
 		{
+			if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
+			{
+				for (size_t i = 0; i < 8192; i++)
+					bb->insert(*this, nop_instruction().value(), 0);
+			}
+
 			symbol->set_rva(get_current_rva());
 
 			symbol->emit_bytes(final_buffer);

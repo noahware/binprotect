@@ -19,7 +19,10 @@ namespace binwrite
 		basic_block_t() = default;
 
 		explicit basic_block_t(const std::span<const instruction_t> instructions)
-				:	instructions_(instructions.begin(), instructions.end()) { }
+				:	instructions_(instructions.begin(), instructions.end())
+		{
+			rebuild_offsets();
+		}
 
 		[[nodiscard]] std::shared_ptr<rva_t> rva() const
 		{

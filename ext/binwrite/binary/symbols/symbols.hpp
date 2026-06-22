@@ -56,12 +56,12 @@ namespace binwrite
 			destination_section->move_symbol_after(location, shared_from_this());
 		}
 
-	protected:
 		[[nodiscard]] std::shared_ptr<section_t> section() const
 		{
 			return section_.lock();
 		}
 
+	protected:
 		std::weak_ptr<section_t> section_;
 		symbol_list_t::iterator list_iterator_;
 

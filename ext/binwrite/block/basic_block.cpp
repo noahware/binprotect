@@ -173,10 +173,10 @@ void binwrite::basic_block_t::insert(binary_t& binary, const instruction_t& inst
 
 void binwrite::basic_block_t::insert(binary_t& binary, const std::span<const instruction_t> instructions, const size_type index, const bool inclusive)
 {
-	const rva_t rva = instruction_rva(index);
-	const auto bytes = group_instruction_bytes(instructions);
+	//const rva_t rva = instruction_rva(index);
+	//const auto bytes = group_instruction_bytes(instructions);
 
-	binary.insert(rva, bytes, inclusive);
+	//binary.insert(rva, bytes, inclusive);
 
 	const auto begin = instructions_.begin() + index;
 

@@ -1,5 +1,6 @@
 #include "binary.hpp"
 
+#include <algorithm>
 #include <spdlog/spdlog.h>
 
 static void process_function_basic_block(const binwrite::binary_t& binary,
@@ -218,14 +219,24 @@ bool binwrite::binary_t::collect_basic_block_instructions(const disassembler_t& 
 			break;
 		}
 
-		/*if (const auto overstepped_basic_block = find_containing_basic_block(rva_t{ instruction_rva }))
+		if (const auto existing = find_containing_symbol(instruction_rva))
 		{
-			const auto index = overstepped_basic_block->instruction_index(rva_t{ instruction_rva });
+			const auto existing_rva = existing->rva();
 
-			split_basic_block(*overstepped_basic_block, index);
+			if (existing_rva && *existing_rva != instruction_rva)
+			{
+				const auto byte_offset = static_cast<symbol_t::size_type>(
+					instruction_rva.value() - existing_rva->value());
+
+				if (const auto new_symbol = existing->split(*this, byte_offset))
+				{
+					new_symbol->set_rva(instruction_rva);
+					disassembly_symbol_map_[instruction_rva.value()] = new_symbol;
+				}
+			}
 
 			break;
-		}*/
+		}
 
 		const rva_t next_instruction_rva(instruction_rva.value() + disassembled_instruction->size());
 
@@ -257,7 +268,15 @@ std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_containing_symbol(c
 		return { };
 	}
 
-	return std::prev(it)->second;
+	const auto& candidate = std::prev(it)->second;
+	const auto end = candidate->end_rva();
+
+	if (!end || rva >= *end)
+	{
+		return { };
+	}
+
+	return candidate;
 }
 
 void binwrite::binary_t::fill_code_section_empty_space()
@@ -269,52 +288,93 @@ void binwrite::binary_t::fill_code_section_empty_space()
 			continue;
 		}
 
-		const auto original_symbols = section->symbols();
+		std::vector<std::shared_ptr<symbol_t>> sorted_symbols;
 
-		if (original_symbols.empty())
+		for (const auto& symbol : section->symbols())
 		{
+			if (symbol->rva())
+			{
+				sorted_symbols.push_back(symbol);
+			}
+		}
+
+		const rva_t section_start = section->rva();
+		const rva_t section_end{ section_start.value() + section->size() };
+
+		if (sorted_symbols.empty())
+		{
+			if (section->size() > 0)
+			{
+				create_data_block_from_rva(*section, section_start, section->size());
+			}
+
 			continue;
 		}
 
-		const std::vector symbols(original_symbols.begin(), original_symbols.end());
-		const rva_t section_end_rva{ section->rva().value() + section->size() };
-
-		for (std::size_t i = 0; i < symbols.size() - 1; i++)
+		std::ranges::sort(sorted_symbols, [](const auto& a, const auto& b)
 		{
-			const auto& symbol = symbols[i];
-			const auto& next_symbol = symbols[i + 1];
+			return a->rva()->value() < b->rva()->value();
+		});
 
-			const std::optional<rva_t> end_rva = symbol->end_rva();
-			const std::optional<rva_t> next_symbol_rva = next_symbol->rva();
+		const rva_t first_rva = *sorted_symbols.front()->rva();
 
-			if (!end_rva || !next_symbol_rva)
+		if (section_start < first_rva)
+		{
+			const auto gap_size = first_rva.value() - section_start.value();
+
+			create_data_block_from_rva(*section, section_start, gap_size);
+		}
+
+		for (std::size_t i = 0; i + 1 < sorted_symbols.size(); i++)
+		{
+			const auto end_rva = sorted_symbols[i]->end_rva();
+			const auto next_rva = sorted_symbols[i + 1]->rva();
+
+			if (!end_rva || !next_rva)
 			{
 				continue;
 			}
 
-			if (*end_rva < *next_symbol_rva)
+			if (*end_rva < *next_rva)
 			{
-				const symbol_t::size_type size_needed = next_symbol_rva->value() - end_rva->value();
+				const auto gap_size = next_rva->value() - end_rva->value();
 
-				//create_data_block_from_rva(*section, *end_rva, size_needed);
-
-				//symbol->insert_after()
+				create_data_block_from_rva(*section, *end_rva, gap_size);
 			}
 		}
 
-		const auto last_symbol = *(symbols.end() - 1);
-		
+		const auto last_end = sorted_symbols.back()->end_rva();
 
-		if (const auto symbol_end_rva = last_symbol->end_rva())
+		if (last_end && *last_end < section_end)
 		{
-			
+			const auto gap_size = section_end.value() - last_end->value();
+
+			create_data_block_from_rva(*section, *last_end, gap_size);
 		}
+
+		section->sort_by_rva();
 	}
 }
 
 void binwrite::binary_t::erase_symbol(std::shared_ptr<symbol_t> symbol)
 {
+	if (const auto section = symbol->section())
+	{
+		section->remove_symbol(symbol);
+	}
 
+	std::erase(symbols_, symbol);
+
+	if (const auto rva = symbol->rva())
+	{
+		disassembly_symbol_map_.erase(rva->value());
+	}
+
+	if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
+	{
+		std::erase(basic_blocks_, bb);
+		bb_index_dirty_ = true;
+	}
 }
 
 void binwrite::binary_t::clear_symbol_rvas()
@@ -336,6 +396,11 @@ void binwrite::binary_t::process_disassembly_queue()
 	{
 		const auto entry = disassembly_queue_.front();
 		disassembly_queue_.pop_front();
+
+		if (find_containing_symbol(*entry.rva))
+		{
+			continue;
+		}
 
 		std::vector<instruction_t> instructions = { };
 		std::vector<std::shared_ptr<rva_t>> risky_references = { };
@@ -363,9 +428,6 @@ void binwrite::binary_t::process_disassembly_queue()
 
 			add_to_disassembly_queue(risky_rva, true);
 		}
-
-		//bb_index_[shared_block->rva()->value()] = shared_block;
-		//bb_interval_index_[shared_block->rva()->value()] = shared_block;
 	}
 
 	split_basic_blocks_in_data();
@@ -399,6 +461,7 @@ void binwrite::binary_t::split_basic_blocks_in_data()
 void binwrite::binary_t::disassemble()
 {
 	process_disassembly_queue();
+	fill_code_section_empty_space();
 	assign_function_basic_blocks();
 
 	spdlog::info("basic block count: {}", basic_blocks_.size());
