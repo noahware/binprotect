@@ -309,7 +309,12 @@ void binwrite::binary_t::find_jump_tables(basic_block_t& basic_block)
 
 void binwrite::binary_t::add_llvm_jmp_table_ref(const rva_t table_base, const std::int32_t count, const rva_t dispatcher_rva)
 {
-	const auto table_base_rva = add_rva(table_base);
+	auto table_base_symbol = find_or_create_symbol(table_base);
+
+	if (!table_base_symbol)
+	{
+		return;
+	}
 
 	rva_t table_entry = table_base;
 
@@ -317,22 +322,33 @@ void binwrite::binary_t::add_llvm_jmp_table_ref(const rva_t table_base, const st
 
 	while (count == -1 || i++ < count)
 	{
-		const llvm_jmp_table_entry_t::value_type offset = *reinterpret_cast<const llvm_jmp_table_entry_t::value_type*>(data() + table_entry.value());
+		const auto offset = *reinterpret_cast<const std::int32_t*>(data() + table_entry.value());
+		const rva_t target_rva{ table_base.value() + offset };
 
-		const auto target_rva = add_rva(table_base.value() + offset);
-
-		if (!is_in_code_section(*target_rva))
+		if (!is_in_code_section(target_rva))
 		{
 			break;
 		}
 
-		const auto ref = std::make_shared<llvm_jmp_table_entry_t>(target_rva, table_entry, table_base_rva);
+		auto self_symbol = find_or_create_symbol(table_entry);
+		auto target_symbol = find_or_create_symbol(target_rva);
 
-		add_jump_table_target(dispatcher_rva, target_rva);
-		add_to_disassembly_queue(target_rva);
-		add_rva_ref(ref);
+		if (self_symbol && target_symbol)
+		{
+			auto symbol_ref = std::make_shared<llvm_jmp_table_symbol_ref_t>(
+				target_symbol, self_symbol, table_base_symbol
+			);
 
-		table_entry.set_value(table_entry.value() + sizeof(llvm_jmp_table_entry_t::size_type));
+			symbol_refs_.push_back(symbol_ref);
+			symbol_ref_map_[table_entry.value()] = symbol_ref;
+		}
+
+		const auto target_rva_ptr = std::make_shared<rva_t>(target_rva);
+
+		add_jump_table_target(dispatcher_rva, target_rva_ptr);
+		add_to_disassembly_queue(target_rva_ptr);
+
+		table_entry.set_value(table_entry.value() + sizeof(std::int32_t));
 	}
 }
 

@@ -182,7 +182,6 @@ namespace binwrite
 		void populate_data_symbol_refs();
 		void populate_code_symbol_refs();
 		void populate_dir64_reloc_symbol_refs();
-		void populate_llvm_jmp_table_symbol_refs();
 		void populate_fh4_encoded_symbol_refs();
 
 		void process_instruction_rip_relativity(const disassembled_instruction_t& disassembled_instruction,

@@ -15,6 +15,7 @@
 *.exe
 *.i64
 *.map
+*.trace
 
 build/
 
