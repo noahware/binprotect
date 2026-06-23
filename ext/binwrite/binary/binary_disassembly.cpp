@@ -311,6 +311,23 @@ std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_or_split_symbol(con
 	return new_symbol;
 }
 
+std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_or_create_symbol(const rva_t rva)
+{
+	if (auto symbol = find_or_split_symbol(rva))
+	{
+		return symbol;
+	}
+
+	auto section = find_section(rva);
+
+	if (!section)
+	{
+		return { };
+	}
+
+	return create_data_block_from_rva(*section, rva, 4);
+}
+
 void binwrite::binary_t::fill_code_section_empty_space()
 {
 	for (const auto& section : sections_ | std::views::values)
