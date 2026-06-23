@@ -185,6 +185,14 @@ bool binwrite::binary_t::process_multi_level_jump_table(basic_block_t& pre_mov_b
 
 	auto target_symbol = find_or_split_symbol(rva_t{ displacement });
 
+	if (!target_symbol)
+	{
+		if (auto target_section = find_section(rva_t{ displacement }))
+		{
+			target_symbol = create_data_block_from_rva(*target_section, rva_t{ displacement }, 4);
+		}
+	}
+
 	if (target_symbol)
 	{
 		symbol_refs_.push_back(std::make_shared<msvc_jmp_table_symbol_ref_t>(
@@ -253,6 +261,14 @@ bool binwrite::binary_t::process_jump_table_instruction(basic_block_t& basic_blo
 		}
 
 		auto target_symbol = find_or_split_symbol(rva_t{ displacement });
+
+		if (!target_symbol)
+		{
+			if (auto target_section = find_section(rva_t{ displacement }))
+			{
+				target_symbol = create_data_block_from_rva(*target_section, rva_t{ displacement }, 4);
+			}
+		}
 
 		if (target_symbol)
 		{
