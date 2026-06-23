@@ -189,7 +189,7 @@ bool binwrite::binary_t::collect_basic_block_instructions(const disassembler_t& 
 	{
 		if (instruction_rva.value() == 0x5D72)
 		{
-			__debugbreak();
+			//__debugbreak();
 		}
 
 		constexpr std::size_t max_padding_count = 16;
@@ -316,11 +316,16 @@ std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_or_split_symbol(con
 	return new_symbol;
 }
 
-std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_or_create_symbol(const rva_t rva)
+std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_or_create_symbol(const rva_t rva, const symbol_t::size_type size)
 {
 	if (auto symbol = find_or_split_symbol(rva))
 	{
 		return symbol;
+	}
+
+	if (const auto it = disassembly_symbol_map_.find(rva.value()); it != disassembly_symbol_map_.end())
+	{
+		return it->second;
 	}
 
 	auto section = find_section(rva);
@@ -330,7 +335,7 @@ std::shared_ptr<binwrite::symbol_t> binwrite::binary_t::find_or_create_symbol(co
 		return { };
 	}
 
-	return create_data_block_from_rva(*section, rva, 4);
+	return create_data_block_from_rva(*section, rva, size);
 }
 
 void binwrite::binary_t::fill_code_section_empty_space()
@@ -446,10 +451,23 @@ void binwrite::binary_t::process_disassembly_queue()
 	bb_index_dirty_ = false;
 	fn_index_dirty_ = false;
 
+	std::unordered_map<symbol_t*, std::shared_ptr<symbol_t>> placeholder_replacements;
+
 	while (!disassembly_queue_.empty())
 	{
 		const auto entry = disassembly_queue_.front();
 		disassembly_queue_.pop_front();
+
+		std::shared_ptr<symbol_t> placeholder;
+
+		if (const auto it = disassembly_symbol_map_.find(entry.rva->value()); it != disassembly_symbol_map_.end())
+		{
+			if (const auto db = std::dynamic_pointer_cast<data_block_t>(it->second); db && db->size() == 0)
+			{
+				placeholder = db;
+				erase_symbol(placeholder);
+			}
+		}
 
 		std::vector<instruction_t> instructions = { };
 		std::vector<std::shared_ptr<rva_t>> risky_references = { };
@@ -466,6 +484,11 @@ void binwrite::binary_t::process_disassembly_queue()
 
 		auto basic_block = create_basic_block(*section, instructions, *entry.rva);
 
+		if (placeholder)
+		{
+			placeholder_replacements[placeholder.get()] = basic_block;
+		}
+
 		find_jump_tables(*basic_block);
 
 		for (const auto& risky_rva : risky_references)
@@ -476,6 +499,17 @@ void binwrite::binary_t::process_disassembly_queue()
 			}
 
 			add_to_disassembly_queue(risky_rva, true);
+		}
+	}
+
+	if (!placeholder_replacements.empty())
+	{
+		for (const auto& ref : symbol_refs_)
+		{
+			if (const auto it = placeholder_replacements.find(ref->target().get()); it != placeholder_replacements.end())
+			{
+				ref->set_target(it->second);
+			}
 		}
 	}
 

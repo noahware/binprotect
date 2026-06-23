@@ -102,6 +102,11 @@ namespace binwrite
 			return true;
 		}
 
+		void set_target(std::shared_ptr<symbol_t> target)
+		{
+			target_ = std::move(target);
+		}
+
 	protected:
 		std::shared_ptr<symbol_t> self_;
 		std::shared_ptr<symbol_t> target_;

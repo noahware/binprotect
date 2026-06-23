@@ -172,7 +172,7 @@ namespace binwrite
 
 		std::shared_ptr<symbol_t> find_containing_symbol(rva_t rva) const;
 		std::shared_ptr<symbol_t> find_or_split_symbol(rva_t rva);
-		std::shared_ptr<symbol_t> find_or_create_symbol(rva_t rva);
+		std::shared_ptr<symbol_t> find_or_create_symbol(rva_t rva, symbol_t::size_type size = 4);
 		std::shared_ptr<symbol_t> find_or_create_data_symbol(rva_t rva);
 		void fill_code_section_empty_space();
 		void erase_symbol(std::shared_ptr<symbol_t> symbol);

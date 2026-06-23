@@ -331,7 +331,7 @@ void binwrite::binary_t::add_llvm_jmp_table_ref(const rva_t table_base, const st
 		}
 
 		auto self_symbol = find_or_create_symbol(table_entry);
-		auto target_symbol = find_or_create_symbol(target_rva);
+		auto target_symbol = find_or_create_symbol(target_rva, 0);
 
 		if (self_symbol && target_symbol)
 		{
