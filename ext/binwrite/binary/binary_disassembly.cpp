@@ -187,11 +187,6 @@ bool binwrite::binary_t::collect_basic_block_instructions(const disassembler_t& 
 
 	while (true)
 	{
-		if (instruction_rva.value() == 0x22B6)
-		{
-			__debugbreak();
-		}
-
 		constexpr std::size_t max_padding_count = 16;
 
 		if (instruction_rva.value() + max_padding_count <= buffer_.size())
@@ -566,17 +561,13 @@ void binwrite::binary_t::populate_code_symbol_refs()
 		rva_t self_rva;
 		rva_t::value_type target_rva_value;
 		code_rva_ref_t::size_type instruction_size;
-		bool is_jmp_table;
 	};
 
 	std::vector<convertible_ref_t> candidates;
 
 	for (const auto& ref : rva_refs_)
 	{
-		const bool is_code = typeid(*ref) == typeid(code_rva_ref_t);
-		const bool is_jmp_table = typeid(*ref) == typeid(msvc_jmp_table_ref_t);
-
-		if (!is_code && !is_jmp_table)
+		if (typeid(*ref) != typeid(code_rva_ref_t))
 		{
 			continue;
 		}
@@ -591,7 +582,7 @@ void binwrite::binary_t::populate_code_symbol_refs()
 			continue;
 		}
 
-		candidates.push_back({ self_rva, target_value, code_ref.instruction_size(), is_jmp_table });
+		candidates.push_back({ self_rva, target_value, code_ref.instruction_size() });
 	}
 
 	std::ranges::sort(candidates, [](const auto& a, const auto& b)
@@ -617,22 +608,11 @@ void binwrite::binary_t::populate_code_symbol_refs()
 			continue;
 		}
 
-		if (candidate.is_jmp_table)
-		{
-			symbol_refs_.push_back(std::make_shared<msvc_jmp_table_symbol_ref_t>(
-				target_symbol,
-				self_symbol,
-				static_cast<symbol_ref_t::size_type>(candidate.instruction_size)
-			));
-		}
-		else
-		{
-			symbol_refs_.push_back(std::make_shared<code_symbol_ref_t>(
-				target_symbol,
-				self_symbol,
-				static_cast<symbol_ref_t::size_type>(candidate.instruction_size)
-			));
-		}
+		symbol_refs_.push_back(std::make_shared<code_symbol_ref_t>(
+			target_symbol,
+			self_symbol,
+			static_cast<symbol_ref_t::size_type>(candidate.instruction_size)
+		));
 	}
 
 	const auto code_ref_count = symbol_refs_.size() - std::ranges::count_if(symbol_refs_, [](const auto& ref)

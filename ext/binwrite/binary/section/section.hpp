@@ -51,7 +51,7 @@ namespace binwrite
 
 		void add_symbol(std::shared_ptr<symbol_t> symbol);
 
-		[[nodiscard]] auto symbols() const
+		[[nodiscard]] const symbol_list_t& symbols() const
 		{
 			return symbols_;
 		}

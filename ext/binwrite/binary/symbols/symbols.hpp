@@ -61,6 +61,11 @@ namespace binwrite
 			return section_.lock();
 		}
 
+		[[nodiscard]] symbol_list_t::iterator list_iterator() const noexcept
+		{
+			return list_iterator_;
+		}
+
 	protected:
 		std::weak_ptr<section_t> section_;
 		symbol_list_t::iterator list_iterator_;

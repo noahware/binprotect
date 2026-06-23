@@ -190,10 +190,10 @@ namespace binwrite
 		bool collect_basic_block_instructions(const disassembler_t& disassembler, std::vector<instruction_t>& instructions, rva_t block_rva, std::uint32_t& block_size,
 		                                      bool is_risky, std::vector<std::shared_ptr<rva_t>>& risky_references);
 
-		bool process_multi_level_jump_table(const basic_block_t& basic_block, rva_t entry_table_base,
-		                                    basic_block_t::size_type mov_index);
+		bool process_multi_level_jump_table(basic_block_t& pre_mov_block, rva_t entry_table_base,
+		                                    rva_t dispatcher_rva);
 
-		void process_jump_table_instruction(const basic_block_t& basic_block,
+		bool process_jump_table_instruction(basic_block_t& basic_block,
 		                                    const disassembled_instruction_t& mov_disassembly,
 		                                    basic_block_t::size_type mov_index,
 		                                    basic_block_t::size_type lea_index);
@@ -205,7 +205,7 @@ namespace binwrite
 			return create_data_block(section, bytes, rva);
 		}
 
-		void find_jump_tables(const basic_block_t& basic_block);
+		void find_jump_tables(basic_block_t& basic_block);
 
 		void assign_function_basic_blocks();
 
