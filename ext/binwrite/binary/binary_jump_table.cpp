@@ -1,51 +1,71 @@
 #include "binary.hpp"
+#include "spdlog/spdlog.h"
 
-static std::shared_ptr<binwrite::basic_block_t> previous_basic_block(const binwrite::basic_block_t& basic_block)
+static std::int32_t estimate_jump_table_count(
+	const binwrite::basic_block_t& basic_block,
+	const std::map<binwrite::rva_t::value_type, std::shared_ptr<binwrite::symbol_t>>& symbol_map)
 {
-	const auto sec = basic_block.section();
+	const auto dispatch_rva = static_cast<const binwrite::symbol_t&>(basic_block).rva();
 
-	if (!sec)
-	{
-		return nullptr;
-	}
-
-	const auto& symbols = sec->symbols();
-	auto it = basic_block.list_iterator();
-
-	if (it == symbols.begin())
-	{
-		return nullptr;
-	}
-
-	--it;
-
-	return std::dynamic_pointer_cast<binwrite::basic_block_t>(*it);
-}
-
-static std::int32_t estimate_jump_table_count(const binwrite::basic_block_t& basic_block)
-{
-	const auto last_block = previous_basic_block(basic_block);
-
-	if (!last_block || last_block->count() < 2)
+	if (!dispatch_rva)
 	{
 		return -1;
 	}
 
-	const auto& index_instruction = last_block->at(last_block->count() - 2);
-	const auto& index_disassembly = index_instruction.disassemble();
+	auto it = symbol_map.find(dispatch_rva->value());
 
-	if (!index_disassembly.is_sub() && !index_disassembly.is_cmp())
+	if (it == symbol_map.end() || it == symbol_map.begin())
 	{
 		return -1;
 	}
 
-	const auto index_operands = index_disassembly.visible_operands();
+	constexpr int max_blocks = 5;
+	int checked = 0;
 
-	if (!index_operands.empty() && index_operands[1].is_imm())
+	while (checked < max_blocks)
 	{
-		const auto imm = index_operands[1].imm();
+		--it;
 
-		return static_cast<std::int32_t>(imm.value.s) + 1;
+		const auto bb = std::dynamic_pointer_cast<binwrite::basic_block_t>(it->second);
+
+		if (!bb || bb->count() == 0)
+		{
+			if (it == symbol_map.begin())
+			{
+				break;
+			}
+
+			continue;
+		}
+
+		++checked;
+
+		for (std::uint32_t j = 0; j + 1 < bb->count(); j++)
+		{
+			const auto& disassembly = bb->at(j).disassemble();
+
+			if (!disassembly.is_cmp() && !disassembly.is_sub())
+			{
+				continue;
+			}
+
+			if (!bb->at(j + 1).disassemble().is_conditional_jump())
+			{
+				continue;
+			}
+
+			const auto operands = disassembly.visible_operands();
+
+			if (operands.size() >= 2 && operands[0].is_reg() && operands[1].is_imm())
+			{
+				return static_cast<std::int32_t>(operands[1].imm().value.s) + 1;
+			}
+		}
+
+		if (it == symbol_map.begin())
+		{
+			break;
+		}
 	}
 
 	return -1;
@@ -223,7 +243,7 @@ bool binwrite::binary_t::process_jump_table_instruction(basic_block_t& basic_blo
 		return false;
 	}
 
-	const std::int32_t count = estimate_jump_table_count(basic_block);
+	const std::int32_t count = estimate_jump_table_count(basic_block, disassembly_symbol_map_);
 	const rva_t dispatcher_rva = last_instruction_rva_from_symbol(basic_block);
 
 	if (mem->has_displacement)
