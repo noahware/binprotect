@@ -106,6 +106,11 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
 
 	basic_block->set_rva(rva);
 
+	if (rva)
+	{
+		basic_block->set_block_rva(add_rva(*rva));
+	}
+
 	section.add_symbol(basic_block);
 	symbols_.push_back(basic_block);
 	basic_blocks_.push_back(basic_block);
@@ -251,6 +256,8 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 
 	auto new_basic_block = std::make_shared<basic_block_t>();
 
+	new_basic_block->set_rva(split_rva);
+	new_basic_block->set_block_rva(offset_rva);
 	new_basic_block->push(*this, new_block_instructions, true);
 
 	basic_blocks_.push_back(new_basic_block);
@@ -475,8 +482,6 @@ void binwrite::binary_t::recompile()
 		}
 	}
 
-	const std::size_t alignment = section_alignment();
-
 	for (const auto& section : ordered_sections())
 	{
 		for (const auto& symbol : section->symbols())
@@ -490,6 +495,8 @@ void binwrite::binary_t::recompile()
 		}
 	}
 
+	const std::size_t alignment = section_alignment();
+
 	{
 		rva_t::value_type current = 0;
 
@@ -499,6 +506,16 @@ void binwrite::binary_t::recompile()
 
 			for (const auto& symbol : section->symbols())
 			{
+				const auto sym_align = symbol->required_alignment();
+				if (sym_align > 1)
+				{
+					const auto misalignment = current % sym_align;
+					if (misalignment != 0)
+					{
+						current += sym_align - misalignment;
+					}
+				}
+
 				symbol->set_rva(rva_t{ current });
 				current += symbol->size();
 			}
@@ -529,8 +546,18 @@ void binwrite::binary_t::recompile()
 
 		for (const auto& symbol : section->symbols())
 		{
-			symbol->set_rva(get_current_rva());
+			const auto sym_align = symbol->required_alignment();
+			if (sym_align > 1)
+			{
+				const auto pos = final_buffer.size();
+				const auto misalignment = pos % sym_align;
+				if (misalignment != 0)
+				{
+					final_buffer.insert(final_buffer.end(), sym_align - misalignment, 0);
+				}
+			}
 
+			symbol->set_rva(get_current_rva());
 			symbol->emit_bytes(final_buffer);
 		}
 

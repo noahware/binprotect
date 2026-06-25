@@ -32,6 +32,21 @@ namespace binwrite
 			bytes_.resize(new_size, 0);
 		}
 
+		[[nodiscard]] std::vector<std::uint8_t>& bytes() noexcept
+		{
+			return bytes_;
+		}
+
+		[[nodiscard]] const std::vector<std::uint8_t>& bytes() const noexcept
+		{
+			return bytes_;
+		}
+
+		void insert_bytes(const size_type offset, const std::span<const std::uint8_t> data)
+		{
+			bytes_.insert(bytes_.begin() + offset, data.begin(), data.end());
+		}
+
 	protected:
 		std::vector<std::uint8_t> bytes_;
 	};

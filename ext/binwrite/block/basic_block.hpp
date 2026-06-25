@@ -32,6 +32,11 @@ namespace binwrite
 			return rva_;
 		}
 
+		void set_block_rva(std::shared_ptr<rva_t> rva)
+		{
+			rva_ = std::move(rva);
+		}
+
 		[[nodiscard]] bool should_skip() const
 		{
 			return skip_;

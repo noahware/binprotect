@@ -65,7 +65,7 @@ namespace binwrite
 
 	void apply_deferred_insertions(
 		portable_executable_t& pe,
-		std::vector<std::pair<std::shared_ptr<rva_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
+		std::vector<std::pair<std::shared_ptr<symbol_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
 		const std::vector<std::pair<std::shared_ptr<rva_t>, std::vector<std::uint8_t>>>& unwind_code_insertions,
 		const block_insertion_list_t& block_instructions);
 
@@ -486,38 +486,32 @@ void binwrite::insert_exit_block_pops(
 
 void binwrite::apply_deferred_insertions(
 	portable_executable_t& pe,
-	std::vector<std::pair<std::shared_ptr<rva_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
+	std::vector<std::pair<std::shared_ptr<symbol_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
 	const std::vector<std::pair<std::shared_ptr<rva_t>, std::vector<std::uint8_t>>>& unwind_code_insertions,
 	const block_insertion_list_t& block_instructions)
 {
 	const auto data_section = pe.data_section();
 
-	const rva_t insertion_rva = data_section->rva();
-
-	std::uint16_t size_added = 0;
-
-	for (auto& [rva_ref, bytes] : unwind_info_insertions)
+	for (auto& [symbol_ref, bytes] : unwind_info_insertions)
 	{
 		if (bytes.size() % 2)
 		{
-			bytes.insert(bytes.end(), 0);
+			bytes.push_back(0);
 		}
 
-		pe.insert(insertion_rva, bytes, true);
-		rva_ref->set_target(pe.add_rva(insertion_rva));
-		size_added += static_cast<std::uint16_t>(bytes.size());
-	}
-
-	constexpr std::uint16_t alignment = 32;
-
-	if (const auto pad = size_added % alignment; pad != 0)
-	{
-		pe.insert(rva_t{ insertion_rva.value() + size_added }, alignment - pad, true);
+		const auto new_block = pe.create_data_block(*data_section, bytes);
+		symbol_ref->set_target(new_block);
 	}
 
 	for (const auto& [rva, bytes] : unwind_code_insertions)
 	{
-		pe.insert(*rva, bytes, true);
+		const auto containing_symbol = pe.find_containing_symbol(*rva);
+
+		if (const auto data_block = std::dynamic_pointer_cast<data_block_t>(containing_symbol))
+		{
+			const auto offset = rva->value() - data_block->rva()->value();
+			data_block->insert_bytes(offset, bytes);
+		}
 	}
 
 	for (const auto& [basic_block, instruction, index] : block_instructions)

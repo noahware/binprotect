@@ -159,9 +159,83 @@ namespace binwrite
 			return ref;
 		}
 
+		template <class T>
+		bool add_data_symbol_ref(const T* const value, const std::uint32_t target_alignment = 1)
+		{
+			const rva_t self_rva(static_cast<rva_t::value_type>(reinterpret_cast<const std::uint8_t*>(value) - data()));
+			const auto target_value = static_cast<rva_t::value_type>(*value);
+
+			if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+			{
+				return false;
+			}
+
+			auto self_symbol = find_or_create_symbol(self_rva, static_cast<symbol_t::size_type>(sizeof(T)));
+
+			if (!self_symbol)
+			{
+				return false;
+			}
+
+			auto target_symbol = find_or_create_symbol(rva_t{ target_value });
+
+			if (!target_symbol)
+			{
+				return false;
+			}
+
+			if (target_alignment > 1)
+			{
+				target_symbol->set_required_alignment(target_alignment);
+			}
+
+			symbol_refs_.push_back(std::make_shared<data_symbol_ref_t>(
+				target_symbol,
+				self_symbol,
+				static_cast<symbol_ref_t::size_type>(sizeof(T))
+			));
+
+			return true;
+		}
+
 		void assign_basic_block_to_function(const std::shared_ptr<function_t>& function, const std::shared_ptr<basic_block_t>& basic_block) const;
 
 		void recompile();
+
+		void clear_symbol_rvas();
+
+		[[nodiscard]] std::shared_ptr<symbol_t> find_containing_symbol(rva_t rva) const;
+
+		[[nodiscard]] std::shared_ptr<symbol_ref_t> find_data_symbol_ref_at(const rva_t self_rva) const
+		{
+			for (const auto& ref : symbol_refs_)
+			{
+				const auto self = ref->self();
+
+				if (self && self->rva() && self->rva()->value() == self_rva.value())
+				{
+					return ref;
+				}
+			}
+
+			return { };
+		}
+
+		[[nodiscard]] std::vector<std::shared_ptr<symbol_ref_t>> find_all_symbol_refs_targeting(
+			const std::shared_ptr<symbol_t>& target) const
+		{
+			std::vector<std::shared_ptr<symbol_ref_t>> result;
+
+			for (const auto& ref : symbol_refs_)
+			{
+				if (ref->target() == target)
+				{
+					result.push_back(ref);
+				}
+			}
+
+			return result;
+		}
 
 	protected:
 		virtual void find_data_rvas() = 0;
@@ -169,14 +243,11 @@ namespace binwrite
 		virtual void update_section_headers() = 0;
 		virtual void update_relocations() = 0;
 		virtual bool is_definitely_in_code_range(rva_t rva) const = 0;
-
-		std::shared_ptr<symbol_t> find_containing_symbol(rva_t rva) const;
 		std::shared_ptr<symbol_t> find_or_split_symbol(rva_t rva);
 		std::shared_ptr<symbol_t> find_or_create_symbol(rva_t rva, symbol_t::size_type size = 4);
 		std::shared_ptr<symbol_t> find_or_create_data_symbol(rva_t rva);
 		void fill_code_section_empty_space();
 		void erase_symbol(std::shared_ptr<symbol_t> symbol);
-		void clear_symbol_rvas();
 		void process_disassembly_queue();
 		void split_basic_blocks_in_data();
 		void populate_data_symbol_refs();

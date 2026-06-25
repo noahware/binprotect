@@ -167,10 +167,10 @@ static bool parse_hierarchy_descriptor(binwrite::portable_executable_t& pe, cons
 
 	for (const auto ref : pending_refs)
 	{
-		pe.add_data_rva_ref(ref);
+		pe.add_data_symbol_ref(ref);
 	}
 
-	pe.add_data_rva_ref(&hierarchy_descriptor->base_class_list_rva);
+	pe.add_data_symbol_ref(&hierarchy_descriptor->base_class_list_rva);
 
 	return true;
 }
@@ -195,9 +195,9 @@ static bool parse_complete_object_locator(binwrite::portable_executable_t& pe, c
 		return false;
 	}
 
-	pe.add_data_rva_ref(&object_locator->type_rva);
-	pe.add_data_rva_ref(&object_locator->hierarchy_rva);
-	pe.add_data_rva_ref(&object_locator->self_rva);
+	pe.add_data_symbol_ref(&object_locator->type_rva);
+	pe.add_data_symbol_ref(&object_locator->hierarchy_rva);
+	pe.add_data_symbol_ref(&object_locator->self_rva);
 
 	type_descriptor_rvas.insert(object_locator->type_rva);
 

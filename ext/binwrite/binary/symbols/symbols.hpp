@@ -66,11 +66,22 @@ namespace binwrite
 			return list_iterator_;
 		}
 
+		void set_required_alignment(const std::uint32_t alignment) noexcept
+		{
+			required_alignment_ = alignment;
+		}
+
+		[[nodiscard]] std::uint32_t required_alignment() const noexcept
+		{
+			return required_alignment_;
+		}
+
 	protected:
 		std::weak_ptr<section_t> section_;
 		symbol_list_t::iterator list_iterator_;
 
 		std::optional<rva_t> rva_;
+		std::uint32_t required_alignment_ = 1;
 	};
 
 	class symbol_ref_t

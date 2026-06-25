@@ -116,6 +116,8 @@ void binwrite::binary_t::assign_function_basic_blocks()
 {
 	std::vector<std::shared_ptr<function_t>> removal_functions = { };
 
+	reindex_basic_blocks();
+
 	for (const auto& function : functions_)
 	{
 		const auto basic_block = find_basic_block(*function->rva());
@@ -128,8 +130,6 @@ void binwrite::binary_t::assign_function_basic_blocks()
 		}
 
 		assign_basic_block_to_function(function, basic_block);
-
-		spdlog::info("{} has {} basic block(s)", function->name(), function->basic_blocks().size());
 	}
 
 	for (const auto& function : removal_functions)
@@ -187,11 +187,6 @@ bool binwrite::binary_t::collect_basic_block_instructions(const disassembler_t& 
 
 	while (true)
 	{
-		if (instruction_rva.value() == 0x5D72)
-		{
-			//__debugbreak();
-		}
-
 		constexpr std::size_t max_padding_count = 16;
 
 		if (instruction_rva.value() + max_padding_count <= buffer_.size())
@@ -808,6 +803,17 @@ void binwrite::binary_t::populate_fh4_encoded_symbol_refs()
 	{
 		auto self_symbol = find_or_split_symbol(candidate.self_rva);
 
+		if (self_symbol && self_symbol->size() > candidate.encoded_size)
+		{
+			const rva_t trailing_rva{ candidate.self_rva.value() + candidate.encoded_size };
+			auto trailing = self_symbol->split(*this, candidate.encoded_size);
+			if (trailing)
+			{
+				trailing->set_rva(trailing_rva);
+				disassembly_symbol_map_[trailing_rva.value()] = trailing;
+			}
+		}
+
 		if (!self_symbol)
 		{
 			continue;
@@ -850,10 +856,6 @@ void binwrite::binary_t::disassemble()
 	populate_dir64_reloc_symbol_refs();
 	populate_fh4_encoded_symbol_refs();
 	assign_function_basic_blocks();
-
-	spdlog::info("basic block count: {}", basic_blocks_.size());
-
-	clear_symbol_rvas();
 }
 
 bool binwrite::binary_t::is_inside_disassembly_queue(const rva_t rva) const

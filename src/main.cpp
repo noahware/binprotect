@@ -1,11 +1,11 @@
 #include <binwrite/binary/pe/pe.hpp>
 #include <binwrite/binary/pe/pe_exceptions.hpp>
+#include <binwrite/binary/pe/pe_rtti.hpp>
 #include <binwrite/binary/symbols/map_parsing.hpp>
 #include <binwrite/binary/symbols/pdb_parsing.hpp>
 
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <ranges>
@@ -263,29 +263,27 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		exceptions_support = false;
 	}
 
+	binwrite::exception_context_t exceptions_context;
+
+	if (exceptions_support)
+	{
+		exceptions_context = binwrite::parse_exception_directory(pe);
+	}
+
+	binwrite::queue_throw_info_code_targets(pe);
+
 	pe.disassemble();
 
-	/*const auto rtti_result = binwrite::parse_rtti(pe);
+	const auto rtti_result = binwrite::parse_rtti(pe);
 	binwrite::parse_throw_info(pe, rtti_result);
 
 	if (exceptions_support)
 	{
-		spdlog::info("binary will be obfuscated with exceptions support");
-
-		obfuscate_exceptions_pe_binary(pe, *config);
-	}
-	else
-	{
-		spdlog::info("binary will be obfuscated without exceptions support");
-
-		obfuscate_non_exceptions_binary(pe, *config);
+		//binwrite::split_prologues(pe, exceptions_context);
+		//binwrite::rewrite_frame_pointers(pe, exceptions_context);
 	}
 
-	/*pe.update_rva_references();
-
-	realign_unwind_info(pe);
-
-	pe.update_rva_references();*/
+	pe.clear_symbol_rvas();
 
 	pe.recompile();
 

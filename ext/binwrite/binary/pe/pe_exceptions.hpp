@@ -60,6 +60,7 @@ namespace binwrite
 	};
 
 	exception_context_t parse_exception_directory(portable_executable_t& pe);
+	void queue_throw_info_code_targets(portable_executable_t& pe);
 	void parse_throw_info(portable_executable_t& pe, const rtti_info_t& rtti_result);
 	void rewrite_frame_pointers(portable_executable_t& pe, exception_context_t& context);
 	void split_prologues(portable_executable_t& pe, const exception_context_t& context);

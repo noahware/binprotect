@@ -286,7 +286,7 @@ static bool parse_cxx_funcinfo4(portable_executable_t& pe,
 
 	const auto data = pe.data() + *data_rva;
 
-	pe.add_data_rva_ref(data_rva);
+	pe.add_data_symbol_ref(data_rva);
 
 	cfh4::func_info4_t func_info;
 	const std::uint64_t image_base = reinterpret_cast<std::uint64_t>(pe.data());
@@ -372,26 +372,26 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 			return 0 <= offset && offset + size <= static_cast<std::int64_t>(buffer.size());
 		};
 
-	pe.add_data_rva_ref(language_data);
+	pe.add_data_symbol_ref(language_data);
 
 	if (func_info->disp_unwind_map)
 	{
-		pe.add_data_rva_ref(&func_info->disp_unwind_map);
+		pe.add_data_symbol_ref(&func_info->disp_unwind_map);
 	}
 
 	if (func_info->disp_try_block_map)
 	{
-		pe.add_data_rva_ref(&func_info->disp_try_block_map);
+		pe.add_data_symbol_ref(&func_info->disp_try_block_map);
 	}
 
 	if (func_info->disp_ip_to_state_map)
 	{
-		pe.add_data_rva_ref(&func_info->disp_ip_to_state_map);
+		pe.add_data_symbol_ref(&func_info->disp_ip_to_state_map);
 	}
 
 	if (func_info->disp_es_type_list)
 	{
-		pe.add_data_rva_ref(&func_info->disp_es_type_list);
+		pe.add_data_symbol_ref(&func_info->disp_es_type_list);
 	}
 
 	if (func_info->disp_unwind_map && 0 < func_info->max_state)
@@ -436,7 +436,7 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 				continue;
 			}
 
-			pe.add_data_rva_ref(&entry->disp_handler_array);
+			pe.add_data_symbol_ref(&entry->disp_handler_array);
 
 			const std::int64_t handler_base = entry->disp_handler_array;
 			const std::int64_t handler_total = static_cast<std::int64_t>(entry->n_catches) * static_cast<std::int64_t>(sizeof(cfh3::handler_type_t));
@@ -453,7 +453,7 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 
 				if (handler->disp_type)
 				{
-					pe.add_data_rva_ref(&handler->disp_type);
+					pe.add_data_symbol_ref(&handler->disp_type);
 				}
 				else // catches SEH if type == 0
 				{
@@ -511,7 +511,7 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 		{
 			pe.add_data_rva_ref(&runtime_function->begin_address);
 			pe.add_data_rva_ref(&runtime_function->end_address);
-			pe.add_data_rva_ref(&runtime_function->unwind_info_rva);
+			pe.add_data_symbol_ref(&runtime_function->unwind_info_rva, 4);
 
 			pe.add_to_disassembly_queue(pe.add_rva(runtime_function->begin_address));
 
@@ -531,7 +531,7 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 
 				pe.add_data_rva_ref(&chained_function->begin_address);
 				pe.add_data_rva_ref(&chained_function->end_address);
-				pe.add_data_rva_ref(&chained_function->unwind_info_rva);
+				pe.add_data_symbol_ref(&chained_function->unwind_info_rva, 4);
 			}
 
 			if (unwind_info->has_handler())

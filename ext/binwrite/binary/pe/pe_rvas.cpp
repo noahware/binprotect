@@ -310,6 +310,10 @@ void binwrite::portable_executable_t::add_exception_rvas(const portable_executab
 				.end = add_rva(runtime_function->end_address)
 			});
 		}
+
+		add_data_rva_ref(&runtime_function->begin_address);
+		add_data_rva_ref(&runtime_function->end_address);
+		add_data_symbol_ref(&runtime_function->unwind_info_rva);
 	}
 }
 
