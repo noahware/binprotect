@@ -4,6 +4,7 @@
 #include "../../disassembler/disassembler.hpp"
 
 #include <cstring>
+#include <spdlog/spdlog.h>
 
 bool binwrite::data_symbol_ref_t::patch_reference(binary_t& binary)
 {
@@ -89,6 +90,15 @@ bool binwrite::code_symbol_ref_t::widen_encoding()
 
 	if (!widened)
 	{
+		const auto disassembly = disassembled_instruction_t::from_instruction(instruction);
+		const auto rva = block->rva();
+
+		spdlog::error("failed to widen instruction at rva 0x{:X}: {} (size={}, encoding_size={})",
+			rva ? rva->value() : 0,
+			disassembly ? disassembly->to_string() : "???",
+			instruction.size(),
+			encoding_size_);
+
 		return false;
 	}
 
