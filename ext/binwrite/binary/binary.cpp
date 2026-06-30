@@ -494,19 +494,6 @@ void binwrite::binary_t::recompile()
 		}
 	}
 
-	for (const auto& section : ordered_sections())
-	{
-		for (const auto& symbol : section->symbols())
-		{
-			if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
-			{
-				const auto nop = nop_instruction().value();
-				const std::vector<instruction_t> nops(15, nop);
-				bb->insert(*this, nops, 1);
-			}
-		}
-	}
-
 	const std::size_t alignment = section_alignment();
 
 	{
