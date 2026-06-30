@@ -1,7 +1,8 @@
-#include "../binary.hpp"
+﻿#include "../binary.hpp"
 #include "../../block/basic_block.hpp"
 #include "../../block/data_block.hpp"
 #include "../../disassembler/disassembler.hpp"
+#include "../pe/cxx_frame_handler4.hpp"
 
 #include <cstring>
 #include <spdlog/spdlog.h>
@@ -68,7 +69,7 @@ std::int32_t binwrite::msvc_jmp_table_symbol_ref_t::compute_displacement(const r
 	return static_cast<std::int32_t>(target_rva.value());
 }
 
-bool binwrite::code_symbol_ref_t::widen_encoding()
+bool binwrite::code_symbol_ref_t::widen_encoding(binary_t&)
 {
 	const auto block = std::dynamic_pointer_cast<basic_block_t>(self_);
 
@@ -90,14 +91,10 @@ bool binwrite::code_symbol_ref_t::widen_encoding()
 
 	if (!widened)
 	{
-		const auto disassembly = disassembled_instruction_t::from_instruction(instruction);
 		const auto rva = block->rva();
 
-		spdlog::error("failed to widen instruction at rva 0x{:X}: {} (size={}, encoding_size={})",
-			rva ? rva->value() : 0,
-			disassembly ? disassembly->to_string() : "???",
-			instruction.size(),
-			encoding_size_);
+		spdlog::error("failed to widen instruction at rva 0x{:X} size={}",
+			rva ? rva->value() : 0, instruction.size());
 
 		return false;
 	}
@@ -166,7 +163,7 @@ bool binwrite::fh4_encoded_symbol_ref_t::patch_reference(binary_t& binary)
 	return true;
 }
 
-bool binwrite::fh4_encoded_symbol_ref_t::widen_encoding()
+bool binwrite::fh4_encoded_symbol_ref_t::widen_encoding(binary_t& binary)
 {
 	if (self_->size() >= 5)
 	{

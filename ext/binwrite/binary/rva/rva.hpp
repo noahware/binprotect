@@ -138,9 +138,11 @@ namespace binwrite
 	public:
 		using size_type = std::uint8_t;
 
-		data_rva_ref_t(std::shared_ptr<rva_t> target, const rva_t self, const size_type size)
+		data_rva_ref_t(std::shared_ptr<rva_t> target, const rva_t self, const size_type size,
+		               const std::uint32_t target_alignment = 1)
 				:	rva_ref_t(std::move(target), self),
-					size_(size) { }
+					size_(size),
+					target_alignment_(target_alignment) { }
 
 		std::expected<void, error_t> update_reference(binary_t& binary) override;
 
@@ -149,8 +151,14 @@ namespace binwrite
 			return size_;
 		}
 
+		[[nodiscard]] std::uint32_t target_alignment() const noexcept
+		{
+			return target_alignment_;
+		}
+
 	protected:
 		size_type size_ = 0;
+		std::uint32_t target_alignment_ = 1;
 	};
 
 	class msvc_jmp_table_ref_t : public code_rva_ref_t

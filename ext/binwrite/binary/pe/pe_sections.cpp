@@ -1,4 +1,4 @@
-#include "pe.hpp"
+﻿#include "pe.hpp"
 
 void binwrite::portable_executable_t::find_sections()
 {
@@ -121,6 +121,7 @@ void binwrite::portable_executable_t::update_section_headers()
 	{
 		const auto section_name = section_header.to_str();
 		const auto& info = sections_[section_name];
+
 
 		section_header.virtual_address = info->rva().value();
 		section_header.virtual_size = info->size();

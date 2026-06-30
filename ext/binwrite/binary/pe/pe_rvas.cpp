@@ -157,13 +157,7 @@ void binwrite::portable_executable_t::parse_import_thunk_rvas(const portable_exe
 {
 	while (original_thunk->function)
 	{
-		if (original_thunk->is_ordinal)
-		{
-			const auto ordinal = reinterpret_cast<const std::uint16_t*>(&original_thunk->address);
-
-			add_data_rva_ref(ordinal);
-		}
-		else
+		if (!original_thunk->is_ordinal)
 		{
 			add_data_rva_ref(&original_thunk->address);
 		}
@@ -289,6 +283,24 @@ void binwrite::portable_executable_t::add_relocation_rvas(const portable_executa
 	}
 }
 
+void binwrite::portable_executable_t::add_unwind_info_rvas(const portable_executable::unwind_info_t* const unwind_info)
+{
+	if (unwind_info->has_chained_function())
+	{
+		const auto* const chained = unwind_info->language_specific_data<portable_executable::runtime_function_t>();
+
+		add_data_rva_ref(&chained->begin_address);
+		add_data_rva_ref(&chained->end_address);
+		add_data_rva_ref(&chained->unwind_info_rva, false, 4);
+	}
+	else if (unwind_info->has_handler())
+	{
+		const auto* const handler_rva = unwind_info->language_specific_data<std::uint32_t>();
+
+		add_data_rva_ref(handler_rva);
+	}
+}
+
 void binwrite::portable_executable_t::add_exception_rvas(const portable_executable::nt_headers_t* nt_headers)
 {
 	const auto data_directory = nt_headers->optional_header.data_directories.exception_directory;
@@ -313,7 +325,15 @@ void binwrite::portable_executable_t::add_exception_rvas(const portable_executab
 
 		add_data_rva_ref(&runtime_function->begin_address);
 		add_data_rva_ref(&runtime_function->end_address);
-		add_data_symbol_ref(&runtime_function->unwind_info_rva);
+		add_data_rva_ref(&runtime_function->unwind_info_rva, false, 4);
+
+		if (runtime_function->unwind_info_rva && is_rva_valid(rva_t{ runtime_function->unwind_info_rva }))
+		{
+			const auto* const unwind_info = reinterpret_cast<const portable_executable::unwind_info_t*>(
+				data() + runtime_function->unwind_info_rva);
+
+			add_unwind_info_rvas(unwind_info);
+		}
 	}
 }
 

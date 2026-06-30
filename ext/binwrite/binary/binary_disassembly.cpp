@@ -241,6 +241,12 @@ bool binwrite::binary_t::collect_basic_block_instructions(const disassembler_t& 
 
 		const rva_t next_instruction_rva(instruction_rva.value() + disassembled_instruction->size());
 
+		const auto mid_it = disassembly_symbol_map_.upper_bound(instruction_rva.value());
+		if (mid_it != disassembly_symbol_map_.end() && mid_it->first < next_instruction_rva.value())
+		{
+			break;
+		}
+
 		const instruction_t::const_value_type instruction_bytes(instruction_address, disassembled_instruction->size());
 
 		process_instruction_rip_relativity(*disassembled_instruction, instruction_rva, next_instruction_rva, risky_references);
@@ -457,7 +463,7 @@ void binwrite::binary_t::process_disassembly_queue()
 
 		if (const auto it = disassembly_symbol_map_.find(entry.rva->value()); it != disassembly_symbol_map_.end())
 		{
-			if (const auto db = std::dynamic_pointer_cast<data_block_t>(it->second); db && db->size() == 0)
+			if (const auto db = std::dynamic_pointer_cast<data_block_t>(it->second))
 			{
 				placeholder = db;
 				erase_symbol(placeholder);
@@ -543,6 +549,7 @@ void binwrite::binary_t::populate_data_symbol_refs()
 		rva_t self_rva;
 		rva_t::value_type target_rva_value;
 		data_rva_ref_t::size_type encoding_size;
+		std::uint32_t target_alignment;
 	};
 
 	std::vector<convertible_ref_t> candidates;
@@ -564,7 +571,7 @@ void binwrite::binary_t::populate_data_symbol_refs()
 			continue;
 		}
 
-		candidates.push_back({ self_rva, target_value, data_ref.encoding_size() });
+		candidates.push_back({ self_rva, target_value, data_ref.encoding_size(), data_ref.target_alignment() });
 	}
 
 	std::ranges::sort(candidates, [](const auto& a, const auto& b)
@@ -588,6 +595,11 @@ void binwrite::binary_t::populate_data_symbol_refs()
 		if (!target_symbol)
 		{
 			continue;
+		}
+
+		if (candidate.target_alignment > 1)
+		{
+			target_symbol->set_required_alignment(candidate.target_alignment);
 		}
 
 		symbol_refs_.push_back(std::make_shared<data_symbol_ref_t>(
@@ -851,6 +863,7 @@ void binwrite::binary_t::disassemble()
 {
 	process_disassembly_queue();
 	fill_code_section_empty_space();
+
 	populate_data_symbol_refs();
 	populate_code_symbol_refs();
 	populate_dir64_reloc_symbol_refs();

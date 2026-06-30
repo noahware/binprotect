@@ -90,6 +90,7 @@ namespace binwrite
 		                                   std::uint16_t depth = 0);
 		void add_export_rvas(const portable_executable::nt_headers_t* nt_headers);
 		void add_relocation_rvas(const portable_executable::nt_headers_t* nt_headers);
+		void add_unwind_info_rvas(const portable_executable::unwind_info_t* unwind_info);
 		void add_exception_rvas(const portable_executable::nt_headers_t* nt_headers);
 
 		template <class T>

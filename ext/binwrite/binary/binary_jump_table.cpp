@@ -387,10 +387,11 @@ void binwrite::binary_t::add_msvc_jmp_table_ref(const rva_t table_base, const st
 			break;
 		}
 
-		const auto ref = add_data_rva_ref(entry);
+		add_data_rva_ref(entry);
 
-		add_jump_table_target(dispatcher_rva, ref->target());
-		add_to_disassembly_queue(ref->target());
+		const auto target_rva = add_rva(*entry);
+		add_jump_table_target(dispatcher_rva, target_rva);
+		add_to_disassembly_queue(target_rva);
 
 		table_entry.set_value(table_entry.value() + sizeof(llvm_jmp_table_entry_t::size_type));
 	}

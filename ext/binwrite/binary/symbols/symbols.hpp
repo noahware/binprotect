@@ -56,6 +56,13 @@ namespace binwrite
 			destination_section->move_symbol_after(location, shared_from_this());
 		}
 
+		void move_before(const std::shared_ptr<symbol_t>& location)
+		{
+			const auto destination_section = location->section();
+
+			destination_section->move_symbol_before(location, shared_from_this());
+		}
+
 		[[nodiscard]] std::shared_ptr<section_t> section() const
 		{
 			return section_.lock();
@@ -108,7 +115,7 @@ namespace binwrite
 
 		virtual bool patch_reference(binary_t& binary) = 0;
 
-		virtual bool widen_encoding()
+		virtual bool widen_encoding(binary_t& binary)
 		{
 			return true;
 		}
@@ -116,6 +123,16 @@ namespace binwrite
 		void set_target(std::shared_ptr<symbol_t> target)
 		{
 			target_ = std::move(target);
+		}
+
+		void set_self(std::shared_ptr<symbol_t> self)
+		{
+			self_ = std::move(self);
+		}
+
+		void set_encoding_size(const size_type size)
+		{
+			encoding_size_ = size;
 		}
 
 	protected:
@@ -141,7 +158,7 @@ namespace binwrite
 				:	symbol_ref_t(std::move(target), std::move(self), encoding_size) { }
 
 		bool patch_reference(binary_t& binary) override;
-		bool widen_encoding() override;
+		bool widen_encoding(binary_t& binary) override;
 
 	protected:
 		[[nodiscard]] virtual std::int32_t compute_displacement(rva_t self_rva, rva_t target_rva) const;
@@ -194,7 +211,7 @@ namespace binwrite
 		}
 
 		bool patch_reference(binary_t& binary) override;
-		bool widen_encoding() override;
+		bool widen_encoding(binary_t& binary) override;
 
 	protected:
 		std::shared_ptr<symbol_t> previous_target_;

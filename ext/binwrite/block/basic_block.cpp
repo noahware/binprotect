@@ -224,13 +224,20 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::basic_block_t::split_at(binar
 		return { };
 	}
 
+	std::optional<rva_t> split_rva;
+
+	if (rva_)
+	{
+		split_rva = instruction_rva(index);
+	}
+
 	const auto begin = instructions_.begin() + index;
 	const auto end = instructions_.end();
 
 	const auto owning_section = section();
 	const std::span new_instructions(begin, end);
 
-	const auto new_basic_block = binary.create_basic_block(*owning_section, new_instructions);
+	const auto new_basic_block = binary.create_basic_block(*owning_section, new_instructions, split_rva);
 
 	instructions_.erase(begin, end);
 	total_size_ -= new_basic_block->total_size_;

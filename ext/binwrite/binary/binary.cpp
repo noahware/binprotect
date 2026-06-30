@@ -1,9 +1,12 @@
-#include "binary.hpp"
+﻿#include "binary.hpp"
 #include "../disassembler/disassembler.hpp"
+#include "../../portable-executable/image.hpp"
 
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <ranges>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "../../../src/assembler/assembler.hpp"
 
@@ -261,7 +264,16 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 	new_basic_block->push(*this, new_block_instructions, true);
 
 	basic_blocks_.push_back(new_basic_block);
+	symbols_.push_back(new_basic_block);
 	bb_index_dirty_ = true;
+
+	if (const auto section = find_section(split_rva))
+	{
+		const auto original_shared = basic_block.shared_from_this();
+
+		section->add_symbol(new_basic_block);
+		section->move_symbol_after(original_shared, new_basic_block);
+	}
 
 	for (const auto& function : functions_)
 	{
@@ -474,7 +486,7 @@ void binwrite::binary_t::recompile()
 {
 	for (const auto& symbol_ref : symbol_refs_)
 	{
-		if (!symbol_ref->widen_encoding())
+		if (!symbol_ref->widen_encoding(*this))
 		{
 			spdlog::error("unable to widen symbol reference's encoding");
 
@@ -489,7 +501,7 @@ void binwrite::binary_t::recompile()
 			if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
 			{
 				const auto nop = nop_instruction().value();
-				const std::vector<instruction_t> nops(1, nop);
+				const std::vector<instruction_t> nops(15, nop);
 				bb->insert(*this, nops, 1);
 			}
 		}
@@ -498,36 +510,36 @@ void binwrite::binary_t::recompile()
 	const std::size_t alignment = section_alignment();
 
 	{
-		rva_t::value_type current = 0;
+		rva_t::value_type offset = 0;
 
 		for (const auto& section : ordered_sections())
 		{
-			const rva_t section_rva{ current };
+			const auto section_offset = offset;
 
 			for (const auto& symbol : section->symbols())
 			{
 				const auto sym_align = symbol->required_alignment();
 				if (sym_align > 1)
 				{
-					const auto misalignment = current % sym_align;
+					const auto misalignment = offset % sym_align;
 					if (misalignment != 0)
 					{
-						current += sym_align - misalignment;
+						offset += sym_align - misalignment;
 					}
 				}
 
-				symbol->set_rva(rva_t{ current });
-				current += symbol->size();
+				symbol->set_rva(rva_t{ offset });
+				offset += symbol->size();
 			}
 
-			const auto section_size = current - section_rva.value();
+			const auto section_size = offset - section_offset;
 			const auto padding_needed = (alignment - (section_size % alignment)) % alignment;
 
-			section->set_rva(section_rva);
+			section->set_rva(rva_t{ section_offset });
 			section->set_size(static_cast<section_t::size_type>(section_size));
 			section->set_padding(static_cast<section_t::size_type>(padding_needed));
 
-			current += static_cast<rva_t::value_type>(padding_needed);
+			offset += static_cast<rva_t::value_type>(padding_needed);
 		}
 	}
 
@@ -535,14 +547,9 @@ void binwrite::binary_t::recompile()
 
 	std::vector<std::uint8_t> final_buffer;
 
-	const auto get_current_rva = [&final_buffer]() -> rva_t
-		{
-			return rva_t{ static_cast<rva_t::value_type>(final_buffer.size()) };
-		};
-
 	for (const auto& section : ordered_sections())
 	{
-		const rva_t section_rva = get_current_rva();
+		const auto section_offset = final_buffer.size();
 
 		for (const auto& symbol : section->symbols())
 		{
@@ -557,14 +564,14 @@ void binwrite::binary_t::recompile()
 				}
 			}
 
-			symbol->set_rva(get_current_rva());
+			symbol->set_rva(rva_t{ static_cast<rva_t::value_type>(final_buffer.size()) });
 			symbol->emit_bytes(final_buffer);
 		}
 
-		const std::size_t section_size = final_buffer.size() - section_rva.value();
-		const std::size_t padding_needed = (alignment - (section_size % alignment)) % alignment;
+		const auto section_size = final_buffer.size() - section_offset;
+		const auto padding_needed = (alignment - (section_size % alignment)) % alignment;
 
-		section->set_rva(section_rva);
+		section->set_rva(rva_t{ static_cast<rva_t::value_type>(section_offset) });
 		section->set_size(static_cast<section_t::size_type>(section_size));
 		section->set_padding(static_cast<section_t::size_type>(padding_needed));
 
@@ -577,9 +584,7 @@ void binwrite::binary_t::recompile()
 	{
 		if (!symbol_ref->patch_reference(*this))
 		{
-			spdlog::error("unable to patch symbol reference's encoding");
-
-			return;
+			spdlog::error("failed to patch ref type: {}", typeid(*symbol_ref).name());
 		}
 	}
 

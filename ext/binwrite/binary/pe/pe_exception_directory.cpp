@@ -286,7 +286,7 @@ static bool parse_cxx_funcinfo4(portable_executable_t& pe,
 
 	const auto data = pe.data() + *data_rva;
 
-	pe.add_data_symbol_ref(data_rva);
+	pe.add_data_rva_ref(data_rva);
 
 	cfh4::func_info4_t func_info;
 	const std::uint64_t image_base = reinterpret_cast<std::uint64_t>(pe.data());
@@ -299,37 +299,18 @@ static bool parse_cxx_funcinfo4(portable_executable_t& pe,
 		return false;
 	}
 
-	if (func_info.header.has_try_block_map && func_info.disp_try_block_map)
-	{
-		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_try_block_map) }) ||
-			!parse_try_block_handlers(pe, func_info, image_base, function_start,
-				runtime_function->begin_address, func_handlers, catch_handlers,
-				catches_seh)
-			)
-		{
-			return false;
-		}
-	}
-
 	register_func_info_refs(pe, func_info, *data_rva);
 
 	if (func_info.disp_ip_to_state_map)
 	{
-		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_ip_to_state_map) }))
+		if (pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_ip_to_state_map) }))
 		{
-			return false;
+			parse_ip_to_state_map(pe, func_info, image_base, function_start, runtime_function->begin_address);
 		}
-
-		parse_ip_to_state_map(pe, func_info, image_base, function_start, runtime_function->begin_address);
 	}
 
 	if (func_info.disp_unwind_map)
 	{
-		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_ip_to_state_map) }))
-		{
-			return false;
-		}
-
 		cfh4::unwind_map4_t unwind_map(&func_info, image_base);
 
 		for (const auto entry : unwind_map)
@@ -341,6 +322,16 @@ static bool parse_cxx_funcinfo4(portable_executable_t& pe,
 					static_cast<std::uint32_t>(entry.action),
 					catch_handlers);
 			}
+		}
+	}
+
+	if (func_info.header.has_try_block_map && func_info.disp_try_block_map)
+	{
+		if (pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(func_info.disp_try_block_map) }))
+		{
+			parse_try_block_handlers(pe, func_info, image_base, function_start,
+				runtime_function->begin_address, func_handlers, catch_handlers,
+				catches_seh);
 		}
 	}
 
@@ -372,26 +363,26 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 			return 0 <= offset && offset + size <= static_cast<std::int64_t>(buffer.size());
 		};
 
-	pe.add_data_symbol_ref(language_data);
+	pe.add_data_rva_ref(language_data);
 
 	if (func_info->disp_unwind_map)
 	{
-		pe.add_data_symbol_ref(&func_info->disp_unwind_map);
+		pe.add_data_rva_ref(&func_info->disp_unwind_map);
 	}
 
 	if (func_info->disp_try_block_map)
 	{
-		pe.add_data_symbol_ref(&func_info->disp_try_block_map);
+		pe.add_data_rva_ref(&func_info->disp_try_block_map);
 	}
 
 	if (func_info->disp_ip_to_state_map)
 	{
-		pe.add_data_symbol_ref(&func_info->disp_ip_to_state_map);
+		pe.add_data_rva_ref(&func_info->disp_ip_to_state_map);
 	}
 
 	if (func_info->disp_es_type_list)
 	{
-		pe.add_data_symbol_ref(&func_info->disp_es_type_list);
+		pe.add_data_rva_ref(&func_info->disp_es_type_list);
 	}
 
 	if (func_info->disp_unwind_map && 0 < func_info->max_state)
@@ -436,7 +427,7 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 				continue;
 			}
 
-			pe.add_data_symbol_ref(&entry->disp_handler_array);
+			pe.add_data_rva_ref(&entry->disp_handler_array);
 
 			const std::int64_t handler_base = entry->disp_handler_array;
 			const std::int64_t handler_total = static_cast<std::int64_t>(entry->n_catches) * static_cast<std::int64_t>(sizeof(cfh3::handler_type_t));
@@ -453,7 +444,7 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 
 				if (handler->disp_type)
 				{
-					pe.add_data_symbol_ref(&handler->disp_type);
+					pe.add_data_rva_ref(&handler->disp_type);
 				}
 				else // catches SEH if type == 0
 				{
@@ -509,9 +500,14 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 
 		for (std::uint32_t i = 0; i < count; i++, runtime_function++)
 		{
+			if (runtime_function->begin_address == 0)
+			{
+				continue;
+			}
+
 			pe.add_data_rva_ref(&runtime_function->begin_address);
 			pe.add_data_rva_ref(&runtime_function->end_address);
-			pe.add_data_symbol_ref(&runtime_function->unwind_info_rva, 4);
+			pe.add_data_rva_ref(&runtime_function->unwind_info_rva);
 
 			pe.add_to_disassembly_queue(pe.add_rva(runtime_function->begin_address));
 
@@ -531,7 +527,7 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 
 				pe.add_data_rva_ref(&chained_function->begin_address);
 				pe.add_data_rva_ref(&chained_function->end_address);
-				pe.add_data_symbol_ref(&chained_function->unwind_info_rva, 4);
+				pe.add_data_rva_ref(&chained_function->unwind_info_rva);
 			}
 
 			if (unwind_info->has_handler())

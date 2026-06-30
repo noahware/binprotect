@@ -191,7 +191,7 @@ void binwrite::portable_executable_t::update_relocations()
 		return;
 	}
 
-	const auto old_dir_size = static_cast<symbol_t::size_type>(header.size);
+	const auto old_dir_size = static_cast<symbol_t::size_type>(directory_symbol->size());
 
 	reloc_pages_t reloc_pages = collect_reloc_pages(relocations_);
 	auto new_directory = compile_relocation_directory(reloc_pages);

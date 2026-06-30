@@ -71,9 +71,12 @@ std::optional<std::uint8_t> binwrite::find_displacement_offset(const std::uint8_
 		return decoded.raw.disp.offset;
 	}
 
-	if ((decoded.attributes & ZYDIS_ATTRIB_IS_RELATIVE) && decoded.raw.imm[0].size == 32)
+	if (decoded.attributes & ZYDIS_ATTRIB_IS_RELATIVE)
 	{
-		return decoded.raw.imm[0].offset;
+		if (decoded.raw.imm[0].size == 32)
+		{
+			return decoded.raw.imm[0].offset;
+		}
 	}
 
 	return std::nullopt;

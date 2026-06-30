@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <portable-executable/image.hpp>
-
 using block_insertion_list_t = std::vector<std::tuple<std::shared_ptr<binwrite::basic_block_t>, binwrite::instruction_t, std::uint32_t>>;
 
 namespace binwrite
@@ -183,9 +182,11 @@ void binwrite::assign_runtime_function_basic_block(const binary_t& binary,
 
 	if (!last_disassembly.is_unconditional_jump())
 	{
-		if (const auto fallthrough_basic_block = binary.find_basic_block(basic_block->end_rva()))
+		const auto end_rva = basic_block->end_rva();
+		const auto ft_block = binary.find_basic_block(end_rva);
+		if (ft_block)
 		{
-			assign_runtime_function_basic_block(binary, function, fallthrough_basic_block, begin, end, visited);
+			assign_runtime_function_basic_block(binary, function, ft_block, begin, end, visited);
 		}
 	}
 }
@@ -218,6 +219,16 @@ bool binwrite::scan_function_for_rewrite_conflicts(
 	const portable_executable::runtime_function_t* runtime_function,
 	const binary_t& binary)
 {
+	if (entry_block->count() > 0)
+	{
+		const auto& first_instruction = entry_block->at(0).disassemble();
+
+		if (first_instruction.is_call() || first_instruction.is_jump())
+		{
+			return true;
+		}
+	}
+
 	const std::int64_t prologue_stack_offset = compute_prologue_stack_offset(entry_block, unwind_info);
 
 	for (const auto& basic_block : function.basic_blocks())
@@ -397,7 +408,7 @@ void binwrite::adjust_displacements_in_block(
 			const auto reassembled = make_assembler_instruction(disassembly);
 			const auto compiled = reassembled->compile();
 
-			reassemble_displacement_instruction(pe, basic_block, j, instruction, *compiled, block_instructions);
+			basic_block->replace_instruction(j, *compiled);
 		}
 	}
 }
@@ -500,7 +511,12 @@ void binwrite::apply_deferred_insertions(
 		}
 
 		const auto new_block = pe.create_data_block(*data_section, bytes);
-		symbol_ref->set_target(new_block);
+
+		const auto all_refs_at_self = pe.find_all_symbol_refs_by_self(symbol_ref->self());
+		for (const auto& ref : all_refs_at_self)
+		{
+			ref->set_target(new_block);
+		}
 	}
 
 	for (const auto& [rva, bytes] : unwind_code_insertions)
@@ -514,10 +530,33 @@ void binwrite::apply_deferred_insertions(
 		}
 	}
 
+	std::unordered_map<basic_block_t*, std::uint32_t> index_zero_counts;
+
 	for (const auto& [basic_block, instruction, index] : block_instructions)
 	{
 		const bool inclusive = index != 0;
 		basic_block->insert(pe, instruction, index, inclusive);
+
+		if (index == 0)
+		{
+			index_zero_counts[basic_block.get()]++;
+		}
+	}
+
+	for (const auto& [block_ptr, count] : index_zero_counts)
+	{
+		const auto block = std::dynamic_pointer_cast<basic_block_t>(block_ptr->shared_from_this());
+		const auto remainder = block->split_at(pe, count);
+
+		if (!remainder)
+		{
+			continue;
+		}
+
+		for (const auto& ref : pe.find_all_symbol_refs_by_self(block))
+		{
+			ref->set_self(remainder);
+		}
 	}
 }
 

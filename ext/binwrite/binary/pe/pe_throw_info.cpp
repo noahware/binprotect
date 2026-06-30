@@ -1,6 +1,5 @@
 #include "pe_exceptions.hpp"
 #include <ranges>
-#include <spdlog/spdlog.h>
 
 struct throw_info_t
 {
@@ -74,7 +73,7 @@ static void for_each_throw_info(binwrite::portable_executable_t& pe, Fn&& callba
 
 void binwrite::queue_throw_info_code_targets(portable_executable_t& pe)
 {
-	for_each_throw_info(pe, [&pe](const throw_info_t* throw_info, const catchable_type_array_t* catchable_types)
+	for_each_throw_info(pe, [&](const throw_info_t* throw_info, const catchable_type_array_t* catchable_types)
 	{
 		for (std::uint32_t i = 0; i < catchable_types->count; i++)
 		{
@@ -102,8 +101,6 @@ void binwrite::queue_throw_info_code_targets(portable_executable_t& pe)
 
 void binwrite::parse_throw_info(portable_executable_t& pe, const rtti_info_t& rtti_result)
 {
-	std::uint32_t throw_info_count = 0;
-
 	for_each_throw_info(pe, [&](const throw_info_t* throw_info, const catchable_type_array_t* catchable_types)
 	{
 		std::vector<const std::uint32_t*> pending_refs;
@@ -127,8 +124,6 @@ void binwrite::parse_throw_info(portable_executable_t& pe, const rtti_info_t& rt
 			pending_refs.push_back(type_rva);
 		}
 
-		throw_info_count++;
-
 		for (const auto ref : pending_refs)
 		{
 			pe.add_data_symbol_ref(ref);
@@ -150,6 +145,4 @@ void binwrite::parse_throw_info(portable_executable_t& pe, const rtti_info_t& rt
 			pe.add_data_symbol_ref(&throw_info->forward_compat);
 		}
 	});
-
-	spdlog::info("[THROW] found {} valid ThrowInfo structures", throw_info_count);
 }

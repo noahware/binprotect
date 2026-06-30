@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "../block/data_block.hpp"
 #include "function/function.hpp"
 #include "section/section.hpp"
@@ -141,7 +141,8 @@ namespace binwrite
 		void reindex_functions() const;
 
 		template <class T>
-		std::shared_ptr<rva_ref_t> add_data_rva_ref(const T* const value, const bool force_inclusive = false)
+		std::shared_ptr<rva_ref_t> add_data_rva_ref(const T* const value, const bool force_inclusive = false,
+		                                             const std::uint32_t target_alignment = 1)
 		{
 			const rva_t data_reference(static_cast<rva_t::value_type>(reinterpret_cast<const std::uint8_t*>(value) - data()));
 
@@ -152,7 +153,8 @@ namespace binwrite
 
 			const auto data_rva = add_rva(static_cast<rva_t::value_type>(*value), force_inclusive);
 
-			const auto ref = std::make_shared<data_rva_ref_t>(data_rva, data_reference, static_cast<data_rva_ref_t::size_type>(sizeof(T)));
+			const auto ref = std::make_shared<data_rva_ref_t>(data_rva, data_reference,
+				static_cast<data_rva_ref_t::size_type>(sizeof(T)), target_alignment);
 
 			add_rva_ref(ref);
 
@@ -177,7 +179,7 @@ namespace binwrite
 				return false;
 			}
 
-			auto target_symbol = find_or_create_symbol(rva_t{ target_value });
+			auto target_symbol = find_or_create_symbol(rva_t{ target_value }, 0);
 
 			if (!target_symbol)
 			{
@@ -229,6 +231,22 @@ namespace binwrite
 			for (const auto& ref : symbol_refs_)
 			{
 				if (ref->target() == target)
+				{
+					result.push_back(ref);
+				}
+			}
+
+			return result;
+		}
+
+		[[nodiscard]] std::vector<std::shared_ptr<symbol_ref_t>> find_all_symbol_refs_by_self(
+			const std::shared_ptr<symbol_t>& self) const
+		{
+			std::vector<std::shared_ptr<symbol_ref_t>> result;
+
+			for (const auto& ref : symbol_refs_)
+			{
+				if (ref->self() == self)
 				{
 					result.push_back(ref);
 				}
