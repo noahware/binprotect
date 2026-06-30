@@ -196,13 +196,6 @@ void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, con
 	const auto last_instruction = first_instruction + count;
 	const rva_t::size_type erased_size = group_instructions_size({ first_instruction, last_instruction });
 
-	if (affects_buffer)
-	{
-		const rva_t rva = instruction_rva(index);
-
-		binary.erase(rva, erased_size);
-	}
-
 	instructions_.erase(first_instruction, last_instruction);
 	total_size_ -= erased_size;
 }
