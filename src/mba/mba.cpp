@@ -1,4 +1,3 @@
-#if 0
 #include "mba.hpp"
 #include "flag_behaviour.hpp"
 
@@ -256,7 +255,7 @@ static std::vector<binwrite::instruction_t> mba_stub(const binwrite::disassemble
 }
 
 void binprotect::mba::do_pass(binwrite::binary_t& binary, binwrite::basic_block_t& basic_block,
-                              const bool flag_dependant, const should_skip_memory_operands_fn& should_skip_memory_operands)
+                              const bool flag_dependant)
 {
 	const std::span<const binwrite::instruction_t> original_instructions = basic_block.instructions();
 	const std::vector instructions(original_instructions.begin(), original_instructions.end());
@@ -265,22 +264,15 @@ void binprotect::mba::do_pass(binwrite::binary_t& binary, binwrite::basic_block_
 
 	std::uint32_t added = 0;
 
-	for (std::uint32_t i = 0; i < instructions.size(); i++)
+	for (std::uint32_t i = 1; i < instructions.size(); i++)
 	{
 		const auto& instruction = instructions[i];
 		const auto& disassembled_instruction = instruction.disassemble();
 
 		const std::uint32_t basic_block_index = i + added;
-		const binwrite::rva_t instruction_rva = basic_block.instruction_rva(basic_block_index);
 
 		if (disassembled_instruction.rip_relative() || disassembled_instruction.rsp_relative() ||
-			disassembled_instruction.has_lock() || binary.find_rva_ref(instruction_rva))
-		{
-			continue;
-		}
-
-		if (should_skip_memory_operands && should_skip_memory_operands(disassembled_instruction, instruction_rva) &&
-			disassembled_instruction.has_visible_mem_operand())
+			disassembled_instruction.has_lock())
 		{
 			continue;
 		}
@@ -331,4 +323,3 @@ void binprotect::mba::do_pass(binwrite::binary_t& binary, binwrite::basic_block_
 		added += static_cast<std::uint32_t>(obfuscated_instructions.size()) - 1;
 	}
 }
-#endif

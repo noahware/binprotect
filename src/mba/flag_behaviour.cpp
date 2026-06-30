@@ -1,4 +1,3 @@
-#if 0
 #include "flag_behaviour.hpp"
 #include "../assembler/assembler.hpp"
 
@@ -158,4 +157,3 @@ bool binprotect::mba::should_instruction_emulate_flags(std::deque<flag_dependant
 
 	return false;
 }
-#endif

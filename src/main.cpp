@@ -13,6 +13,8 @@
 #include <vector>
 
 #include "config/config.hpp"
+#include "linear_substitution/linear_substitution.hpp"
+#include "mba/mba.hpp"
 
 static std::vector<std::uint8_t> read_file_from_disk(const std::string& path)
 {
@@ -92,6 +94,27 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 
 	const auto rtti_result = binwrite::parse_rtti(pe);
 	binwrite::parse_throw_info(pe, rtti_result);
+
+	for (const auto& basic_block : pe.basic_blocks())
+	{
+		if (basic_block->should_skip())
+		{
+			continue;
+		}
+
+		if (config->linear_substitution)
+		{
+			binprotect::linear_substitution::do_pass(pe, *basic_block);
+		}
+
+		for (std::uint8_t pass = 0; pass < config->mixed_boolean_arithmetic_count; pass++)
+		{
+			binprotect::mba::do_pass(pe, *basic_block, true);
+		}
+	}
+
+	spdlog::info("applied linear substitution: {}, mba passes: {}",
+		config->linear_substitution ? "yes" : "no", config->mixed_boolean_arithmetic_count);
 
 	pe.clear_symbol_rvas();
 	pe.recompile();
