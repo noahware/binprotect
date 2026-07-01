@@ -127,6 +127,32 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
 	return basic_block;
 }
 
+std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
+	const std::span<const instruction_t> instructions)
+{
+	return create_basic_block(*code_section(), instructions);
+}
+
+std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block_after(
+	const std::shared_ptr<basic_block_t>& after_block, const std::span<const instruction_t> instructions)
+{
+	const auto basic_block = create_basic_block(instructions);
+
+	basic_block->move_after(after_block);
+
+	return basic_block;
+}
+
+std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block_before(
+	const std::shared_ptr<basic_block_t>& before_block, const std::span<const instruction_t> instructions)
+{
+	const auto basic_block = create_basic_block(instructions);
+
+	basic_block->move_before(before_block);
+
+	return basic_block;
+}
+
 std::shared_ptr<binwrite::function_t> binwrite::binary_t::create_function(const std::string& name, const rva_t rva)
 {
 	if (const auto existing_function = find_function(rva))

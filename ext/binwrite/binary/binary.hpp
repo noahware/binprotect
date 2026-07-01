@@ -66,6 +66,9 @@ namespace binwrite
 		                                                  std::span<const instruction_t> instructions,
 		                                                  std::optional<rva_t> rva = std::nullopt);
 
+		std::shared_ptr<basic_block_t> create_basic_block(std::span<const instruction_t> instructions);
+		std::shared_ptr<basic_block_t> create_basic_block_after(const std::shared_ptr<basic_block_t>& after_block, std::span<const instruction_t> instructions);
+
 		void unlink_basic_block(std::shared_ptr<basic_block_t> basic_block);
 
 		[[nodiscard]] std::span<std::shared_ptr<basic_block_t>> basic_blocks();
@@ -131,6 +134,7 @@ namespace binwrite
 		[[nodiscard]] bool is_rva_valid(rva_t::value_type rva) const;
 
 		void add_rva_ref(std::shared_ptr<rva_ref_t> ref);
+		void add_symbol_ref(std::shared_ptr<symbol_ref_t> ref);
 		void redirect_rva_ref(rva_t self, rva_t new_target);
 		void add_jump_table_target(rva_t dispatcher_rva, const std::shared_ptr<rva_t>& target);
 
@@ -237,6 +241,17 @@ namespace binwrite
 			}
 
 			return result;
+		}
+
+		void redirect_symbol_refs(const std::shared_ptr<symbol_t>& old_target, const std::shared_ptr<symbol_t>& new_target)
+		{
+			for (const auto& ref : symbol_refs_)
+			{
+				if (ref->target() == old_target)
+				{
+					ref->set_target(new_target);
+				}
+			}
 		}
 
 		[[nodiscard]] std::vector<std::shared_ptr<symbol_ref_t>> find_all_symbol_refs_by_self(

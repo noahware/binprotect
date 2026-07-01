@@ -139,6 +139,11 @@ void binwrite::binary_t::add_rva_ref(std::shared_ptr<rva_ref_t> ref)
 	rva_refs_.push_back(std::move(ref));
 }
 
+void binwrite::binary_t::add_symbol_ref(std::shared_ptr<symbol_ref_t> ref)
+{
+	symbol_refs_.push_back(std::move(ref));
+}
+
 bool binwrite::binary_t::is_rva_valid(const rva_t rva) const
 {
 	return rva.value() < size();
