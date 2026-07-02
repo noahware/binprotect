@@ -12,6 +12,16 @@ void binwrite::basic_block_t::clear_disassembly()
 	}
 }
 
+void binwrite::basic_block_t::recompute_size()
+{
+	total_size_ = 0;
+
+	for (const auto& instruction : instructions_)
+	{
+		total_size_ += instruction.size();
+	}
+}
+
 binwrite::rva_t binwrite::basic_block_t::end_rva() const
 {
 	return rva_t{ rva_->value() + total_size_ };
@@ -146,18 +156,6 @@ std::vector<std::uint8_t> group_instruction_bytes(const std::span<const binwrite
 	return bytes;
 }
 
-static binwrite::rva_t::size_type group_instructions_size(const std::span<const binwrite::instruction_t> instructions)
-{
-	binwrite::rva_t::size_type size = 0;
-
-	for (const auto& instruction : instructions)
-	{
-		size += static_cast<binwrite::rva_t::size_type>(instruction.size());
-	}
-
-	return size;
-}
-
 void binwrite::basic_block_t::push(binary_t& binary, const instruction_t& instruction, const bool pre_existing, const bool inclusive)
 {
 	push(binary, std::array{ instruction }, pre_existing, inclusive);
@@ -173,8 +171,16 @@ void binwrite::basic_block_t::push(binary_t& binary, const std::span<const instr
 		binary.insert(rva, bytes, inclusive);
 	}
 
+	const auto first_added = instructions_.size();
+
 	instructions_.insert(instructions_.end(), instructions.begin(), instructions.end());
-	total_size_ += group_instructions_size(instructions);
+
+	for (auto i = first_added; i < instructions_.size(); i++)
+	{
+		binary.assign_instruction_id_if_needed(instructions_[i]);
+	}
+
+	recompute_size();
 }
 
 void binwrite::basic_block_t::insert(binary_t& binary, const instruction_t& instruction, const size_type index, const bool inclusive)
@@ -185,19 +191,25 @@ void binwrite::basic_block_t::insert(binary_t& binary, const instruction_t& inst
 void binwrite::basic_block_t::insert(binary_t& binary, const std::span<const instruction_t> instructions, const size_type index, const bool inclusive)
 {
 	const auto begin = instructions_.begin() + index;
+	const auto inserted_count = static_cast<size_type>(instructions.size());
 
 	instructions_.insert(begin, instructions.begin(), instructions.end());
-	total_size_ += group_instructions_size(instructions);
+
+	for (size_type i = 0; i < inserted_count; i++)
+	{
+		binary.assign_instruction_id_if_needed(instructions_[index + i]);
+	}
+
+	recompute_size();
 }
 
 void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, const size_type count, const bool affects_buffer)
 {
 	const auto first_instruction = instructions_.begin() + index;
-	const auto last_instruction = first_instruction + count;
-	const rva_t::size_type erased_size = group_instructions_size({ first_instruction, last_instruction });
 
-	instructions_.erase(first_instruction, last_instruction);
-	total_size_ -= erased_size;
+	instructions_.erase(first_instruction, first_instruction + count);
+
+	recompute_size();
 }
 
 void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, const bool affects_buffer)
@@ -233,7 +245,7 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::basic_block_t::split_at(binar
 	const auto new_basic_block = binary.create_basic_block(*owning_section, new_instructions, split_rva);
 
 	instructions_.erase(begin, end);
-	total_size_ -= new_basic_block->total_size_;
+	recompute_size();
 
 	new_basic_block->move_after(shared_from_this());
 

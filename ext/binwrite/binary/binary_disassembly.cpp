@@ -650,27 +650,48 @@ void binwrite::binary_t::populate_code_symbol_refs()
 
 	for (const auto& candidate : candidates)
 	{
-		auto self_symbol = find_or_split_symbol(candidate.self_rva);
-
-		if (!self_symbol)
-		{
-			continue;
-		}
-
 		const rva_t target_rva{ candidate.target_rva_value };
 
-		auto target_symbol = find_or_split_symbol(target_rva);
+		const auto self_block = find_containing_basic_block(candidate.self_rva);
 
-		if (!target_symbol)
+		if (!self_block || !self_block->rva())
 		{
 			continue;
 		}
 
-		symbol_refs_.push_back(std::make_shared<code_symbol_ref_t>(
+		const auto self_offset = candidate.self_rva.value() - self_block->rva()->value();
+		const auto self_instr_id = self_block->instruction_id_at_byte_offset(static_cast<std::uint32_t>(self_offset));
+
+		if (!self_instr_id)
+		{
+			continue;
+		}
+
+		std::shared_ptr<symbol_t> target_symbol;
+
+		if (const auto target_block = find_containing_basic_block(target_rva); target_block && target_block->rva())
+		{
+			target_symbol = target_block;
+		}
+		else
+		{
+			target_symbol = find_or_split_symbol(target_rva);
+
+			if (!target_symbol)
+			{
+				continue;
+			}
+		}
+
+		auto ref = std::make_shared<code_symbol_ref_t>(
 			target_symbol,
-			self_symbol,
+			self_block,
 			static_cast<symbol_ref_t::size_type>(candidate.instruction_size)
-		));
+		);
+
+		ref->set_self_instr_id(self_instr_id);
+
+		symbol_refs_.push_back(ref);
 	}
 
 	const auto code_ref_count = symbol_refs_.size() - std::ranges::count_if(symbol_refs_, [](const auto& ref)
@@ -865,9 +886,9 @@ void binwrite::binary_t::disassemble()
 	fill_code_section_empty_space();
 
 	populate_data_symbol_refs();
-	populate_code_symbol_refs();
 	populate_dir64_reloc_symbol_refs();
 	populate_fh4_encoded_symbol_refs();
+	populate_code_symbol_refs();
 	assign_function_basic_blocks();
 }
 

@@ -160,8 +160,17 @@ namespace binwrite
 		bool patch_reference(binary_t& binary) override;
 		bool widen_encoding(binary_t& binary) override;
 
+		void set_self_instr_id(const instruction_t::id_type self_instr_id)
+		{
+			self_instr_id_ = self_instr_id;
+		}
+
 	protected:
 		[[nodiscard]] virtual std::int32_t compute_displacement(rva_t self_rva, rva_t target_rva) const;
+
+		[[nodiscard]] std::optional<rva_t> effective_self_rva() const;
+
+		instruction_t::id_type self_instr_id_ = 0;
 	};
 
 	class msvc_jmp_table_symbol_ref_t : public code_symbol_ref_t
