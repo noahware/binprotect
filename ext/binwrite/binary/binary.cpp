@@ -107,6 +107,11 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
 {
 	const auto basic_block = std::make_shared<basic_block_t>(instructions);
 
+	for (auto& instruction : basic_block->instructions())
+	{
+		assign_instruction_id_if_needed(instruction);
+	}
+
 	basic_block->set_rva(rva);
 
 	if (rva)

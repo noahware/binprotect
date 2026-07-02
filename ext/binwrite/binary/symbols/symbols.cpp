@@ -31,9 +31,41 @@ bool binwrite::data_symbol_ref_t::patch_reference(binary_t& binary)
 	return true;
 }
 
+static std::optional<binwrite::rva_t> resolve_instr_rva(const std::shared_ptr<binwrite::symbol_t>& symbol,
+	const binwrite::instruction_t::id_type instr_id)
+{
+	const auto base = symbol->rva();
+
+	if (!base || instr_id == 0)
+	{
+		return base;
+	}
+
+	const auto block = std::dynamic_pointer_cast<binwrite::basic_block_t>(symbol);
+
+	if (!block)
+	{
+		return base;
+	}
+
+	const auto offset = block->byte_offset_of_instruction_id(instr_id);
+
+	if (offset == binwrite::basic_block_t::invalid_index)
+	{
+		return base;
+	}
+
+	return binwrite::rva_t{ base->value() + offset };
+}
+
+std::optional<binwrite::rva_t> binwrite::code_symbol_ref_t::effective_self_rva() const
+{
+	return resolve_instr_rva(self_, self_instr_id_);
+}
+
 bool binwrite::code_symbol_ref_t::patch_reference(binary_t& binary)
 {
-	const auto self_rva = self_->rva();
+	const auto self_rva = effective_self_rva();
 	const auto target_rva = target_->rva();
 
 	if (!self_rva || !target_rva)
@@ -78,7 +110,16 @@ bool binwrite::code_symbol_ref_t::widen_encoding(binary_t&)
 		return true;
 	}
 
-	const auto& instruction = block->at(0);
+	const auto index = self_instr_id_
+		? block->instruction_index_by_id(self_instr_id_)
+		: 0;
+
+	if (index == basic_block_t::invalid_index)
+	{
+		return true;
+	}
+
+	const auto& instruction = block->at(index);
 
 	if (instruction.size() >= 5)
 	{
@@ -99,7 +140,7 @@ bool binwrite::code_symbol_ref_t::widen_encoding(binary_t&)
 		return false;
 	}
 
-	block->replace_instruction(0, *widened);
+	block->replace_instruction(index, *widened);
 
 	encoding_size_ = widened->size();
 

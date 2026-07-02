@@ -68,6 +68,20 @@ namespace binwrite
 
 		std::shared_ptr<basic_block_t> create_basic_block(std::span<const instruction_t> instructions);
 		std::shared_ptr<basic_block_t> create_basic_block_after(const std::shared_ptr<basic_block_t>& after_block, std::span<const instruction_t> instructions);
+		std::shared_ptr<basic_block_t> create_basic_block_before(const std::shared_ptr<basic_block_t>& before_block, std::span<const instruction_t> instructions);
+
+		[[nodiscard]] instruction_t::id_type next_instruction_id()
+		{
+			return ++next_id_;
+		}
+
+		void assign_instruction_id_if_needed(instruction_t& instruction)
+		{
+			if (instruction.id() == 0)
+			{
+				instruction.set_id(next_instruction_id());
+			}
+		}
 
 		void unlink_basic_block(std::shared_ptr<basic_block_t> basic_block);
 
@@ -328,6 +342,8 @@ namespace binwrite
 		std::vector<std::shared_ptr<symbol_t>> symbols_;
 		std::vector<std::shared_ptr<symbol_ref_t>> symbol_refs_;
 		std::unordered_map<rva_t::value_type, std::shared_ptr<symbol_ref_t>> symbol_ref_map_;
+
+		instruction_t::id_type next_id_ = 0;
 
 		std::vector<std::shared_ptr<rva_t>> rva_blocks_;
 

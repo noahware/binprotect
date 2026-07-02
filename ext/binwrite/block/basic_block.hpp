@@ -21,10 +21,7 @@ namespace binwrite
 		explicit basic_block_t(const std::span<const instruction_t> instructions)
 				:	instructions_(instructions.begin(), instructions.end())
 		{
-			for (const auto& instruction : instructions_)
-			{
-				total_size_ += instruction.size();
-			}
+			recompute_size();
 		}
 
 		[[nodiscard]] std::shared_ptr<rva_t> rva() const
@@ -136,13 +133,59 @@ namespace binwrite
 
 		void replace_instruction(const size_type index, instruction_t instruction)
 		{
-			auto& old_instruction = instructions_.at(index);
-			total_size_ -= old_instruction.size();
-			old_instruction = std::move(instruction);
-			total_size_ += old_instruction.size();
+			auto& slot = instructions_.at(index);
+			const auto preserved_id = slot.id();
+
+			slot = std::move(instruction);
+
+			if (slot.id() == 0)
+			{
+				slot.set_id(preserved_id);
+			}
+
+			recompute_size();
+		}
+
+		[[nodiscard]] size_type byte_offset_of_instruction_id(const instruction_t::id_type id) const
+		{
+			size_type cumulative = 0;
+
+			for (const auto& instruction : instructions_)
+			{
+				if (instruction.id() == id)
+				{
+					return cumulative;
+				}
+
+				cumulative += instruction.size();
+			}
+
+			return invalid_index;
+		}
+
+		[[nodiscard]] instruction_t::id_type instruction_id_at_byte_offset(const size_type byte_offset) const
+		{
+			const auto index = index_from_byte_offset(byte_offset);
+
+			return index == invalid_index ? 0 : instructions_.at(index).id();
+		}
+
+		[[nodiscard]] size_type instruction_index_by_id(const instruction_t::id_type id) const
+		{
+			for (size_type i = 0; i < count(); i++)
+			{
+				if (instructions_[i].id() == id)
+				{
+					return i;
+				}
+			}
+
+			return invalid_index;
 		}
 
 	protected:
+		void recompute_size();
+
 		size_type index_from_byte_offset(size_type byte_offset) const;
 
 		std::shared_ptr<rva_t> rva_;
