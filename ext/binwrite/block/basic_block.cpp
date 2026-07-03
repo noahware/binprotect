@@ -163,7 +163,7 @@ void binwrite::basic_block_t::push(binary_t& binary, const instruction_t& instru
 
 void binwrite::basic_block_t::push(binary_t& binary, const std::span<const instruction_t> instructions, const bool pre_existing, const bool inclusive)
 {
-	if (!pre_existing)
+	if (!pre_existing && rva_)
 	{
 		const rva_t rva = end_rva();
 		const auto bytes = group_instruction_bytes(instructions);

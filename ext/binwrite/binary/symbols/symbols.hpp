@@ -165,6 +165,11 @@ namespace binwrite
 			self_instr_id_ = self_instr_id;
 		}
 
+		[[nodiscard]] instruction_t::id_type self_instr_id() const noexcept
+		{
+			return self_instr_id_;
+		}
+
 	protected:
 		[[nodiscard]] virtual std::int32_t compute_displacement(rva_t self_rva, rva_t target_rva) const;
 

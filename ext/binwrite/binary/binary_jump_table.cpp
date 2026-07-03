@@ -184,6 +184,7 @@ bool binwrite::binary_t::process_multi_level_jump_table(basic_block_t& pre_mov_b
 	const rva_t movzx_rva{ base + movzx_byte_offset };
 
 	std::shared_ptr<symbol_t> self_symbol;
+	basic_block_t::size_type self_instr_index = movzx_index;
 
 	if (movzx_byte_offset > 0)
 	{
@@ -197,6 +198,7 @@ bool binwrite::binary_t::process_multi_level_jump_table(basic_block_t& pre_mov_b
 		new_symbol->set_rva(movzx_rva);
 		disassembly_symbol_map_[movzx_rva.value()] = new_symbol;
 		self_symbol = new_symbol;
+		self_instr_index = 0;
 	}
 	else
 	{
@@ -207,9 +209,16 @@ bool binwrite::binary_t::process_multi_level_jump_table(basic_block_t& pre_mov_b
 
 	if (target_symbol)
 	{
-		symbol_refs_.push_back(std::make_shared<msvc_jmp_table_symbol_ref_t>(
+		auto ref = std::make_shared<msvc_jmp_table_symbol_ref_t>(
 			target_symbol, self_symbol, static_cast<symbol_ref_t::size_type>(movzx_disassembly.size())
-		));
+		);
+
+		if (const auto self_block = std::dynamic_pointer_cast<basic_block_t>(self_symbol))
+		{
+			ref->set_self_instr_id(self_block->at(self_instr_index).id());
+		}
+
+		symbol_refs_.push_back(ref);
 	}
 
 	add_msvc_jmp_table_ref(entry_table_base, inner_table_count, dispatcher_rva);
@@ -253,6 +262,7 @@ bool binwrite::binary_t::process_jump_table_instruction(basic_block_t& basic_blo
 		const rva_t mov_rva{ base + byte_offset };
 
 		std::shared_ptr<symbol_t> self_symbol;
+		basic_block_t::size_type self_instr_index = mov_index;
 
 		if (byte_offset > 0)
 		{
@@ -266,6 +276,7 @@ bool binwrite::binary_t::process_jump_table_instruction(basic_block_t& basic_blo
 			new_symbol->set_rva(mov_rva);
 			disassembly_symbol_map_[mov_rva.value()] = new_symbol;
 			self_symbol = new_symbol;
+			self_instr_index = 0;
 		}
 		else
 		{
@@ -276,9 +287,16 @@ bool binwrite::binary_t::process_jump_table_instruction(basic_block_t& basic_blo
 
 		if (target_symbol)
 		{
-			symbol_refs_.push_back(std::make_shared<msvc_jmp_table_symbol_ref_t>(
+			auto ref = std::make_shared<msvc_jmp_table_symbol_ref_t>(
 				target_symbol, self_symbol, static_cast<symbol_ref_t::size_type>(mov_disassembly.size())
-			));
+			);
+
+			if (const auto self_block = std::dynamic_pointer_cast<basic_block_t>(self_symbol))
+			{
+				ref->set_self_instr_id(self_block->at(self_instr_index).id());
+			}
+
+			symbol_refs_.push_back(ref);
 		}
 
 		if (!process_multi_level_jump_table(basic_block, rva_t{ displacement }, dispatcher_rva))

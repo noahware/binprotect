@@ -1,8 +1,6 @@
-#if 0
 #include "control_flow_flattening.hpp"
 #include "../assembler/assembler.hpp"
 
-#include <binwrite/disassembler/disassembler.hpp>
 #include <binwrite/util/random.hpp>
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -18,7 +16,96 @@ struct cff_block_t
 	std::uint32_t id = 0;
 };
 
-static std::vector<cff_block_t> collect_cff_blocks(const binwrite::binary_t& binary, binwrite::function_t& function)
+static std::shared_ptr<binwrite::basic_block_t> find_fallthrough_block(
+	const binwrite::function_t& function,
+	const std::shared_ptr<binwrite::basic_block_t>& basic_block)
+{
+	const auto& last_instruction = basic_block->last_instruction();
+	const auto disassembly = last_instruction.disassemble();
+
+	if (disassembly.is_unconditional_jump() || disassembly.is_ret())
+	{
+		return {};
+	}
+
+	const auto section = basic_block->section();
+
+	if (!section)
+	{
+		return {};
+	}
+
+	auto it = basic_block->list_iterator();
+	++it;
+
+	if (it == section->symbols().end())
+	{
+		return {};
+	}
+
+	const auto next_block = std::dynamic_pointer_cast<binwrite::basic_block_t>(*it);
+
+	if (!next_block)
+	{
+		return {};
+	}
+
+	for (const auto& fn_block : function.basic_blocks())
+	{
+		if (fn_block == next_block)
+		{
+			return next_block;
+		}
+	}
+
+	return {};
+}
+
+static std::shared_ptr<binwrite::basic_block_t> find_target_block(
+	const binwrite::binary_t& binary,
+	const binwrite::function_t& function,
+	const std::shared_ptr<binwrite::basic_block_t>& basic_block)
+{
+	const auto& last_instruction = basic_block->last_instruction();
+	const auto disassembly = last_instruction.disassemble();
+
+	if (!disassembly.is_jump())
+	{
+		return {};
+	}
+
+	const auto last_instr_id = last_instruction.id();
+
+	for (const auto& ref : binary.find_all_symbol_refs_by_self(basic_block))
+	{
+		const auto code_ref = std::dynamic_pointer_cast<binwrite::code_symbol_ref_t>(ref);
+
+		if (!code_ref || code_ref->self_instr_id() != last_instr_id)
+		{
+			continue;
+		}
+
+		const auto target = std::dynamic_pointer_cast<binwrite::basic_block_t>(ref->target());
+
+		if (!target)
+		{
+			continue;
+		}
+
+		for (const auto& fn_block : function.basic_blocks())
+		{
+			if (fn_block == target)
+			{
+				return target;
+			}
+		}
+	}
+
+	return {};
+}
+
+static std::vector<cff_block_t> collect_cff_blocks(const binwrite::binary_t& binary,
+	binwrite::function_t& function)
 {
 	std::vector<cff_block_t> cff_blocks;
 
@@ -31,33 +118,32 @@ static std::vector<cff_block_t> collect_cff_blocks(const binwrite::binary_t& bin
 			id = binwrite::util::random_integral<std::uint16_t>();
 		} while (std::ranges::any_of(cff_blocks, [id](const cff_block_t& cff_block) { return cff_block.id == id; }));
 
-		const auto fallthrough_block = function.fallthrough_block(basic_block);
-		const auto target_block = function.target_block(binary, basic_block);
+		const auto fallthrough = find_fallthrough_block(function, basic_block);
+		const auto target = find_target_block(binary, function, basic_block);
 
-		cff_blocks.emplace_back(basic_block, fallthrough_block, target_block, id);
+		cff_blocks.emplace_back(basic_block, fallthrough, target, id);
 	}
 
 	return cff_blocks;
 }
 
-static std::vector<cff_block_t>::iterator find_cff_block(std::vector<cff_block_t>& cff_blocks, const binwrite::rva_t target_rva)
+static std::vector<cff_block_t>::iterator find_cff_block(std::vector<cff_block_t>& cff_blocks,
+	const std::shared_ptr<binwrite::basic_block_t>& target_block)
 {
-	const auto it = std::ranges::find_if(cff_blocks,
-		[target_rva](const cff_block_t& cff_block)
+	return std::ranges::find_if(cff_blocks,
+		[&target_block](const cff_block_t& cff_block)
 		{
-			return *cff_block.basic_block->rva() == target_rva;
+			return cff_block.basic_block == target_block;
 		}
 	);
-
-	return it;
 }
 
 static std::vector<binwrite::instruction_t> set_block_id_instructions(const cff_block_t& target_cff_block,
-                                                                      const binwrite::register_family_t  id_register_family)
+	const binwrite::register_family_t id_register_family)
 {
 	const auto id_operand = encode_unsigned_imm_operand(target_cff_block.id);
 
-	std::vector<binwrite::instruction_t> instructions = { };
+	std::vector<binwrite::instruction_t> instructions;
 
 	instructions.push_back(pushfq_instruction().value());
 	instructions.push_back(push_instruction(id_register_family.qword).value());
@@ -66,159 +152,189 @@ static std::vector<binwrite::instruction_t> set_block_id_instructions(const cff_
 	return instructions;
 }
 
-static std::shared_ptr<binwrite::basic_block_t> insert_dispatcher_block(binwrite::binary_t& binary,
-	binwrite::function_t& function,
+static std::shared_ptr<binwrite::basic_block_t> insert_dispatcher_anchor(binwrite::binary_t& binary,
 	const std::shared_ptr<binwrite::basic_block_t>& entry_block)
 {
-	const auto marker_instruction = nop_instruction().value();
 	const auto original_count = entry_block->count();
 
-	entry_block->push(binary, marker_instruction, false, true);
+	entry_block->push(binary, nop_instruction().value(), true);
 
-	const auto split_block = binary.split_basic_block(*entry_block,
-		static_cast<binwrite::basic_block_t::size_type>(original_count));
+	const auto anchor_block = entry_block->split_at(binary, original_count);
 
-	return split_block;
-}
-
-static void insert_block_jump_stub(binwrite::binary_t& binary,
-                                   const std::shared_ptr<binwrite::basic_block_t>& stub_basic_block,
-                                   const cff_block_t& cff_block,
-                                   const binwrite::register_family_t id_register_family,
-                                   const binwrite::basic_block_t::size_type entry_stub_size)
-{
-	const auto jmp_destination_operand = encode_unsigned_imm_operand(1);
-	const auto id_operand = encode_unsigned_imm_operand(cff_block.id);
-
-	const auto jump_instruction = jmp_instruction(jmp_destination_operand).value();
-	const auto jump_nz_instruction = jnz_instruction(jmp_destination_operand).value();
-
-	const std::array instructions = {
-		cmp_instruction(id_operand, id_register_family.dword).value(),
-		jump_nz_instruction,
-		pop_instruction(id_register_family.qword).value(),
-		popfq_instruction().value(),
-		jump_instruction
-	};
-
-	stub_basic_block->insert(binary, instructions, entry_stub_size, true);
-
-	const binwrite::rva_t jnz_rva = stub_basic_block->instruction_rva(entry_stub_size + 1);
-	const binwrite::rva_t block_jmp_rva = stub_basic_block->instruction_rva(entry_stub_size + 4);
-
-	const binwrite::rva_t next_branch_rva = stub_basic_block->instruction_rva(entry_stub_size + 5);
-
-	binary.add_rva_ref(std::make_shared<binwrite::code_rva_ref_t>(binary.add_rva(next_branch_rva), jnz_rva, jump_nz_instruction.size()));
-	binary.add_rva_ref(std::make_shared<binwrite::code_rva_ref_t>(cff_block.basic_block->rva(), block_jmp_rva, jump_instruction.size()));
-}
-
-static void insert_fallthrough_block_stub(binwrite::binary_t& binary,
-                                          const std::shared_ptr<binwrite::basic_block_t>& basic_block,
-                                          const std::shared_ptr<binwrite::rva_t>& stub_insert_rva,
-                                          const cff_block_t& fallthrough_cff_block,
-                                          const binwrite::register_family_t id_register_family)
-{
-	const auto jmp_destination_operand = encode_unsigned_imm_operand(1);
-	const auto jump_instruction = jmp_instruction(jmp_destination_operand).value();
-
-	const auto set_id_instructions = set_block_id_instructions(fallthrough_cff_block, id_register_family);
-
-	basic_block->push(binary, set_id_instructions, false, true);
-	basic_block->push(binary, jump_instruction, false, true);
-
-	const binwrite::rva_t jmp_rva = basic_block->last_instruction_rva();
-
-	binary.add_rva_ref(std::make_shared<binwrite::code_rva_ref_t>(stub_insert_rva, jmp_rva, jump_instruction.size()));
-}
-
-static void insert_target_block_stub(binwrite::binary_t& binary,
-                                     const std::shared_ptr<binwrite::basic_block_t>& basic_block,
-                                     const std::shared_ptr<binwrite::rva_t>& stub_insert_rva,
-                                     const cff_block_t& target_cff_block,
-                                     const binwrite::register_family_t id_register_family,
-                                     const binwrite::rva_t last_instruction_rva)
-{
-	const binwrite::rva_t end_rva = basic_block->end_rva();
-
-	insert_fallthrough_block_stub(binary, basic_block, stub_insert_rva, target_cff_block, id_register_family);
-
-	binary.redirect_rva_ref(last_instruction_rva, end_rva);
-}
-
-static void process_cff_fallthrough_block(binwrite::binary_t& binary,
-                                      const cff_block_t& cff_block,
-                                      std::vector<cff_block_t>& cff_blocks,
-                                      const std::shared_ptr<binwrite::rva_t>& stub_insert_rva,
-                                      const binwrite::register_family_t id_register_family)
-{
-	if (const auto& fallthrough_block = cff_block.fallthrough_block)
+	if (!anchor_block)
 	{
-		const auto fallthrough_cff_block = find_cff_block(cff_blocks, *fallthrough_block->rva());
+		return {};
+	}
 
-		if (fallthrough_cff_block == cff_blocks.end())
+	for (const auto& ref : binary.find_all_symbol_refs_by_self(entry_block))
+	{
+		const auto code_ref = std::dynamic_pointer_cast<binwrite::code_symbol_ref_t>(ref);
+
+		if (!code_ref || code_ref->self_instr_id() == 0)
 		{
-			spdlog::warn("couldn't find fallthrough cff block at 0x{:X} for block at 0x{:X}",
-				fallthrough_block->rva()->value(), cff_block.basic_block->rva()->value());
-
-			return;
+			continue;
 		}
 
-		insert_fallthrough_block_stub(binary, cff_block.basic_block, stub_insert_rva, *fallthrough_cff_block, id_register_family);
-	}
-}
-
-static void process_cff_target_block(binwrite::binary_t& binary, const cff_block_t& cff_block,
-                                      std::vector<cff_block_t>& cff_blocks,
-                                      const std::shared_ptr<binwrite::rva_t>& stub_insert_rva,
-                                      const binwrite::register_family_t id_register_family,
-                                      const binwrite::rva_t last_instruction_rva)
-{
-	if (const auto& target_block = cff_block.target_block)
-	{
-		const auto target_cff_block = find_cff_block(cff_blocks, *target_block->rva());
-
-		if (target_cff_block == cff_blocks.end())
+		if (anchor_block->instruction_index_by_id(code_ref->self_instr_id()) != binwrite::basic_block_t::invalid_index)
 		{
-			spdlog::warn("couldn't find target cff block for control flow flattening");
-
-			return;
+			ref->set_self(anchor_block);
 		}
-
-		insert_target_block_stub(binary, cff_block.basic_block, stub_insert_rva, *target_cff_block, id_register_family,
-		                         last_instruction_rva);
 	}
+
+	return anchor_block;
 }
 
-static void flatten_blocks(binwrite::binary_t& binary, const std::shared_ptr<binwrite::rva_t>& stub_insert_rva,
-                           const std::shared_ptr<binwrite::basic_block_t>& stub_basic_block,
-                           const std::shared_ptr<binwrite::basic_block_t>& entry_block,
-                           const binwrite::register_family_t id_register_family,
-                           std::vector<cff_block_t>& cff_blocks,
-                           const std::function<bool(binwrite::rva_t::value_type)>& is_block_fixed)
+static std::shared_ptr<binwrite::basic_block_t> build_dispatcher_chain(binwrite::binary_t& binary,
+	const std::shared_ptr<binwrite::basic_block_t>& anchor_block,
+	const std::vector<cff_block_t>& cff_blocks,
+	const binwrite::register_family_t id_register_family)
 {
-	const binwrite::basic_block_t::size_type entry_stub_size = stub_basic_block->count();
+	std::vector<std::shared_ptr<binwrite::basic_block_t>> comparison_blocks;
+	auto insert_after = std::static_pointer_cast<binwrite::symbol_t>(anchor_block);
 
+	const auto far_operand = encode_unsigned_imm_operand(1);
+
+	for (const auto& cff_block : cff_blocks)
+	{
+		const auto id_operand = encode_unsigned_imm_operand(cff_block.id);
+
+		const std::array instructions = {
+			cmp_instruction(id_operand, id_register_family.dword).value(),
+			jnz_instruction(far_operand).value(),
+			pop_instruction(id_register_family.qword).value(),
+			popfq_instruction().value(),
+			jmp_instruction(far_operand).value()
+		};
+
+		const auto comp_block = binary.create_basic_block_after(
+			std::dynamic_pointer_cast<binwrite::basic_block_t>(insert_after), instructions);
+		comparison_blocks.push_back(comp_block);
+		insert_after = comp_block;
+	}
+
+	const std::array trap_instructions = { int3_instruction() };
+	const auto trap_block = binary.create_basic_block_after(
+		std::dynamic_pointer_cast<binwrite::basic_block_t>(insert_after), trap_instructions);
+
+	for (std::size_t i = 0; i < comparison_blocks.size(); i++)
+	{
+		const auto& comp = comparison_blocks[i];
+		const std::shared_ptr<binwrite::symbol_t> next_target = (i + 1 < comparison_blocks.size())
+			? std::static_pointer_cast<binwrite::symbol_t>(comparison_blocks[i + 1])
+			: std::static_pointer_cast<binwrite::symbol_t>(trap_block);
+
+		const auto& jnz_instr = comp->at(1);
+		auto jnz_ref = std::make_shared<binwrite::code_symbol_ref_t>(
+			next_target,
+			comp,
+			static_cast<binwrite::symbol_ref_t::size_type>(jnz_instr.size())
+		);
+		jnz_ref->set_self_instr_id(jnz_instr.id());
+		binary.add_symbol_ref(jnz_ref);
+
+		const auto& jmp_instr = comp->at(4);
+		auto jmp_ref = std::make_shared<binwrite::code_symbol_ref_t>(
+			cff_blocks[i].basic_block,
+			comp,
+			static_cast<binwrite::symbol_ref_t::size_type>(jmp_instr.size())
+		);
+		jmp_ref->set_self_instr_id(jmp_instr.id());
+		binary.add_symbol_ref(jmp_ref);
+	}
+
+	return trap_block;
+}
+
+static std::shared_ptr<binwrite::basic_block_t> create_set_id_stub(binwrite::binary_t& binary,
+	const std::shared_ptr<binwrite::basic_block_t>& insert_after,
+	const std::shared_ptr<binwrite::basic_block_t>& anchor_block,
+	const cff_block_t& target_cff_block,
+	const binwrite::register_family_t id_register_family)
+{
+	auto instructions = set_block_id_instructions(target_cff_block, id_register_family);
+	instructions.push_back(jmp_instruction(encode_unsigned_imm_operand(1)).value());
+
+	const auto stub_block = binary.create_basic_block_after(insert_after, instructions);
+
+	const auto& jmp_instr = stub_block->last_instruction();
+	auto jmp_ref = std::make_shared<binwrite::code_symbol_ref_t>(
+		anchor_block,
+		stub_block,
+		static_cast<binwrite::symbol_ref_t::size_type>(jmp_instr.size())
+	);
+	jmp_ref->set_self_instr_id(jmp_instr.id());
+	binary.add_symbol_ref(jmp_ref);
+
+	return stub_block;
+}
+
+static void flatten_blocks(binwrite::binary_t& binary,
+	const std::shared_ptr<binwrite::basic_block_t>& anchor_block,
+	const std::shared_ptr<binwrite::basic_block_t>& trap_block,
+	const std::shared_ptr<binwrite::basic_block_t>& entry_block,
+	const binwrite::register_family_t id_register_family,
+	std::vector<cff_block_t>& cff_blocks,
+	const std::function<bool(const std::shared_ptr<binwrite::basic_block_t>&)>& is_block_fixed)
+{
 	for (const auto& cff_block : cff_blocks)
 	{
 		const auto& basic_block = cff_block.basic_block;
 
-		if (basic_block != entry_block && !(is_block_fixed && is_block_fixed(basic_block->rva()->value())))
+		if (basic_block != entry_block && !(is_block_fixed && is_block_fixed(basic_block)))
 		{
-			basic_block->move_entire(binary, stub_basic_block->end_rva());
+			basic_block->move_after(trap_block);
 		}
 
-		insert_block_jump_stub(binary, stub_basic_block, cff_block, id_register_family, entry_stub_size);
+		auto insert_after = basic_block;
 
-		const auto last_instruction_rva = basic_block->last_instruction_rva();
+		if (const auto& fallthrough_block = cff_block.fallthrough_block)
+		{
+			const auto fallthrough_cff_it = find_cff_block(cff_blocks, fallthrough_block);
 
-		process_cff_fallthrough_block(binary, cff_block, cff_blocks, stub_insert_rva, id_register_family);
+			if (fallthrough_cff_it == cff_blocks.end())
+			{
+				spdlog::warn("couldn't find fallthrough cff block");
+				continue;
+			}
 
-		process_cff_target_block(binary, cff_block, cff_blocks, stub_insert_rva, id_register_family, last_instruction_rva);
+			insert_after = create_set_id_stub(binary, insert_after, anchor_block,
+				*fallthrough_cff_it, id_register_family);
+		}
+
+		if (const auto& target_block = cff_block.target_block)
+		{
+			const auto target_cff_it = find_cff_block(cff_blocks, target_block);
+
+			if (target_cff_it == cff_blocks.end())
+			{
+				spdlog::warn("couldn't find target cff block for control flow flattening");
+				continue;
+			}
+
+			const auto target_stub = create_set_id_stub(binary, insert_after, anchor_block,
+				*target_cff_it, id_register_family);
+
+			const auto& last_instruction = basic_block->last_instruction();
+			const auto last_instr_id = last_instruction.id();
+
+			for (const auto& ref : binary.find_all_symbol_refs_by_self(basic_block))
+			{
+				const auto code_ref = std::dynamic_pointer_cast<binwrite::code_symbol_ref_t>(ref);
+
+				if (!code_ref || code_ref->self_instr_id() != last_instr_id)
+				{
+					continue;
+				}
+
+				ref->set_target(target_stub);
+				break;
+			}
+		}
 	}
 }
 
 void binprotect::control_flow::flattening::do_pass(binwrite::binary_t& binary, binwrite::function_t& function,
-                                                   const std::function<bool(binwrite::rva_t::value_type)>& is_block_fixed)
+	const std::function<bool(const std::shared_ptr<binwrite::basic_block_t>&)>& is_block_fixed)
 {
 	if (function.basic_blocks().size() <= 1)
 	{
@@ -230,21 +346,17 @@ void binprotect::control_flow::flattening::do_pass(binwrite::binary_t& binary, b
 	const binwrite::register_family_t id_register_family = binwrite::register_family_t::random();
 
 	const auto entry_block = function.entry_block();
-	const auto dispatcher_block = insert_dispatcher_block(binary, function, entry_block);
+	const auto anchor_block = insert_dispatcher_anchor(binary, entry_block);
 
-	if (!dispatcher_block)
+	if (!anchor_block)
 	{
-		spdlog::error("unable to create dispatcher block for control flow flattening");
-
+		spdlog::error("unable to create dispatcher anchor for control flow flattening");
 		return;
 	}
 
-	const auto stub_insert_rva = dispatcher_block->rva();
-
 	binwrite::util::shuffle<cff_block_t>(cff_blocks);
 
-	flatten_blocks(binary, stub_insert_rva, dispatcher_block, entry_block, id_register_family, cff_blocks, is_block_fixed);
+	const auto trap_block = build_dispatcher_chain(binary, anchor_block, cff_blocks, id_register_family);
 
-	dispatcher_block->push(binary, int3_instruction(), false, true);
+	flatten_blocks(binary, anchor_block, trap_block, entry_block, id_register_family, cff_blocks, is_block_fixed);
 }
-#endif
