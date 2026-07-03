@@ -149,6 +149,10 @@ namespace binwrite
 
 		void add_rva_ref(std::shared_ptr<rva_ref_t> ref);
 		void add_symbol_ref(std::shared_ptr<symbol_ref_t> ref);
+		std::shared_ptr<code_symbol_ref_t> add_code_ref(
+			const std::shared_ptr<basic_block_t>& self,
+			const instruction_t& instruction,
+			const std::shared_ptr<symbol_t>& target);
 		void redirect_rva_ref(rva_t self, rva_t new_target);
 		void add_jump_table_target(rva_t dispatcher_rva, const std::shared_ptr<rva_t>& target);
 

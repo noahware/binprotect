@@ -161,13 +161,7 @@ void binprotect::opaque_predicate::do_pass(binwrite::binary_t& binary,
 
 	const auto& inserted_jz = basic_block->insert(binary, jz_instr, 0);
 
-	auto jz_ref = std::make_shared<binwrite::code_symbol_ref_t>(
-		block_copy,
-		basic_block,
-		static_cast<binwrite::symbol_ref_t::size_type>(inserted_jz.size())
-	);
-	jz_ref->set_self_instr_id(inserted_jz.id());
-	binary.add_symbol_ref(jz_ref);
+	auto jz_ref = binary.add_code_ref(basic_block, inserted_jz, block_copy);
 
 	const auto original_block = basic_block->split_at(binary, 1);
 
@@ -229,13 +223,7 @@ void binprotect::opaque_predicate::do_pass(binwrite::binary_t& binary,
 
 					const auto& pushed_jmp = start_block->push(binary, jmp_instr, true, true);
 
-					auto jmp_ref = std::make_shared<binwrite::code_symbol_ref_t>(
-						fallthrough_block,
-						start_block,
-						static_cast<binwrite::symbol_ref_t::size_type>(pushed_jmp.size())
-					);
-					jmp_ref->set_self_instr_id(pushed_jmp.id());
-					binary.add_symbol_ref(jmp_ref);
+					binary.add_code_ref(start_block, pushed_jmp, fallthrough_block);
 				}
 			}
 		}

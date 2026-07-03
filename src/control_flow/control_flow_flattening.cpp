@@ -223,23 +223,8 @@ static std::shared_ptr<binwrite::basic_block_t> build_dispatcher_chain(binwrite:
 			? std::static_pointer_cast<binwrite::symbol_t>(comparison_blocks[i + 1])
 			: std::static_pointer_cast<binwrite::symbol_t>(trap_block);
 
-		const auto& jnz_instr = comp->at(1);
-		auto jnz_ref = std::make_shared<binwrite::code_symbol_ref_t>(
-			next_target,
-			comp,
-			static_cast<binwrite::symbol_ref_t::size_type>(jnz_instr.size())
-		);
-		jnz_ref->set_self_instr_id(jnz_instr.id());
-		binary.add_symbol_ref(jnz_ref);
-
-		const auto& jmp_instr = comp->at(4);
-		auto jmp_ref = std::make_shared<binwrite::code_symbol_ref_t>(
-			cff_blocks[i].basic_block,
-			comp,
-			static_cast<binwrite::symbol_ref_t::size_type>(jmp_instr.size())
-		);
-		jmp_ref->set_self_instr_id(jmp_instr.id());
-		binary.add_symbol_ref(jmp_ref);
+		binary.add_code_ref(comp, comp->at(1), next_target);
+		binary.add_code_ref(comp, comp->at(4), cff_blocks[i].basic_block);
 	}
 
 	return trap_block;
@@ -256,14 +241,7 @@ static std::shared_ptr<binwrite::basic_block_t> create_set_id_stub(binwrite::bin
 
 	const auto stub_block = binary.create_basic_block_after(insert_after, instructions);
 
-	const auto& jmp_instr = stub_block->last_instruction();
-	auto jmp_ref = std::make_shared<binwrite::code_symbol_ref_t>(
-		anchor_block,
-		stub_block,
-		static_cast<binwrite::symbol_ref_t::size_type>(jmp_instr.size())
-	);
-	jmp_ref->set_self_instr_id(jmp_instr.id());
-	binary.add_symbol_ref(jmp_ref);
+	binary.add_code_ref(stub_block, stub_block->last_instruction(), anchor_block);
 
 	return stub_block;
 }
