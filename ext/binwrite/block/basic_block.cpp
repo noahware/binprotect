@@ -156,9 +156,11 @@ std::vector<std::uint8_t> group_instruction_bytes(const std::span<const binwrite
 	return bytes;
 }
 
-void binwrite::basic_block_t::push(binary_t& binary, const instruction_t& instruction, const bool pre_existing, const bool inclusive)
+binwrite::instruction_t& binwrite::basic_block_t::push(binary_t& binary, const instruction_t& instruction, const bool pre_existing, const bool inclusive)
 {
 	push(binary, std::array{ instruction }, pre_existing, inclusive);
+
+	return instructions_.back();
 }
 
 void binwrite::basic_block_t::push(binary_t& binary, const std::span<const instruction_t> instructions, const bool pre_existing, const bool inclusive)
@@ -183,9 +185,11 @@ void binwrite::basic_block_t::push(binary_t& binary, const std::span<const instr
 	recompute_size();
 }
 
-void binwrite::basic_block_t::insert(binary_t& binary, const instruction_t& instruction, const size_type index, const bool inclusive)
+binwrite::instruction_t& binwrite::basic_block_t::insert(binary_t& binary, const instruction_t& instruction, const size_type index, const bool inclusive)
 {
 	insert(binary, std::array{ instruction }, index, inclusive);
+
+	return instructions_[index];
 }
 
 void binwrite::basic_block_t::insert(binary_t& binary, const std::span<const instruction_t> instructions, const size_type index, const bool inclusive)

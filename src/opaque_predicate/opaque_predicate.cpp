@@ -159,9 +159,7 @@ void binprotect::opaque_predicate::do_pass(binwrite::binary_t& binary,
 	const auto jz_placeholder = encode_unsigned_imm_operand(1);
 	const auto jz_instr = jz_instruction(jz_placeholder).value();
 
-	basic_block->insert(binary, jz_instr, 0);
-
-	const auto& inserted_jz = basic_block->at(0);
+	const auto& inserted_jz = basic_block->insert(binary, jz_instr, 0);
 
 	auto jz_ref = std::make_shared<binwrite::code_symbol_ref_t>(
 		block_copy,
@@ -229,9 +227,7 @@ void binprotect::opaque_predicate::do_pass(binwrite::binary_t& binary,
 					const auto jmp_placeholder = encode_unsigned_imm_operand(1);
 					const auto jmp_instr = jmp_instruction(jmp_placeholder).value();
 
-					start_block->push(binary, jmp_instr, true, true);
-
-					const auto& pushed_jmp = start_block->last_instruction();
+					const auto& pushed_jmp = start_block->push(binary, jmp_instr, true, true);
 
 					auto jmp_ref = std::make_shared<binwrite::code_symbol_ref_t>(
 						fallthrough_block,
