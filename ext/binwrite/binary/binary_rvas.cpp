@@ -150,8 +150,7 @@ std::shared_ptr<binwrite::code_symbol_ref_t> binwrite::binary_t::add_code_ref(
 	const std::shared_ptr<symbol_t>& target)
 {
 	auto ref = std::make_shared<code_symbol_ref_t>(
-		target, self,
-		static_cast<symbol_ref_t::size_type>(instruction.size())
+		target, self, static_cast<symbol_ref_t::size_type>(instruction.size())
 	);
 	ref->set_self_instr_id(instruction.id());
 	symbol_refs_.push_back(ref);

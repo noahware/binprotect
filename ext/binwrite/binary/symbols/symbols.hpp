@@ -135,6 +135,11 @@ namespace binwrite
 			encoding_size_ = size;
 		}
 
+		[[nodiscard]] size_type encoding_size() const noexcept
+		{
+			return encoding_size_;
+		}
+
 	protected:
 		std::shared_ptr<symbol_t> self_;
 		std::shared_ptr<symbol_t> target_;

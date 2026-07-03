@@ -183,6 +183,8 @@ bool binwrite::binary_t::process_multi_level_jump_table(basic_block_t& pre_mov_b
 	const auto movzx_byte_offset = instruction_byte_offset(pre_mov_block, movzx_index);
 	const rva_t movzx_rva{ base + movzx_byte_offset };
 
+	const auto movzx_encoding_size = static_cast<symbol_ref_t::size_type>(movzx_disassembly.size());
+
 	std::shared_ptr<symbol_t> self_symbol;
 	basic_block_t::size_type self_instr_index = movzx_index;
 
@@ -210,7 +212,7 @@ bool binwrite::binary_t::process_multi_level_jump_table(basic_block_t& pre_mov_b
 	if (target_symbol)
 	{
 		auto ref = std::make_shared<msvc_jmp_table_symbol_ref_t>(
-			target_symbol, self_symbol, static_cast<symbol_ref_t::size_type>(movzx_disassembly.size())
+			target_symbol, self_symbol, movzx_encoding_size
 		);
 
 		if (const auto self_block = std::dynamic_pointer_cast<basic_block_t>(self_symbol))
@@ -260,6 +262,7 @@ bool binwrite::binary_t::process_jump_table_instruction(basic_block_t& basic_blo
 		const auto displacement = static_cast<rva_t::value_type>(mem->displacement);
 		const auto byte_offset = instruction_byte_offset(basic_block, mov_index);
 		const rva_t mov_rva{ base + byte_offset };
+		const auto mov_encoding_size = static_cast<symbol_ref_t::size_type>(mov_disassembly.size());
 
 		std::shared_ptr<symbol_t> self_symbol;
 		basic_block_t::size_type self_instr_index = mov_index;
@@ -288,7 +291,7 @@ bool binwrite::binary_t::process_jump_table_instruction(basic_block_t& basic_blo
 		if (target_symbol)
 		{
 			auto ref = std::make_shared<msvc_jmp_table_symbol_ref_t>(
-				target_symbol, self_symbol, static_cast<symbol_ref_t::size_type>(mov_disassembly.size())
+				target_symbol, self_symbol, mov_encoding_size
 			);
 
 			if (const auto self_block = std::dynamic_pointer_cast<basic_block_t>(self_symbol))

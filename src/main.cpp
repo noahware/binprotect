@@ -128,7 +128,13 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		}
 	}
 
-	std::vector<std::shared_ptr<binwrite::basic_block_t>> opaque_blocks;
+	struct opaque_block_t
+	{
+		std::shared_ptr<binwrite::basic_block_t> block;
+		bool in_seh_range;
+	};
+
+	std::vector<opaque_block_t> opaque_blocks;
 
 	{
 		const auto blocks_snapshot = std::vector(pe.basic_blocks().begin(), pe.basic_blocks().end());
@@ -140,14 +146,30 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 				continue;
 			}
 
+			const bool in_seh = exceptions_context && basic_block->rva() &&
+				exceptions_context->is_in_seh_range(basic_block->rva()->value());
+
 			if (config->opaque_predicates)
 			{
-				binprotect::opaque_predicate::do_pass(pe, basic_block, opaque_blocks);
+				const auto before = opaque_blocks.size();
+
+				std::vector<std::shared_ptr<binwrite::basic_block_t>> new_opaque_blocks;
+				binprotect::opaque_predicate::do_pass(pe, basic_block, new_opaque_blocks);
+
+				for (auto& block : new_opaque_blocks)
+				{
+					opaque_blocks.push_back({ std::move(block), in_seh });
+				}
+			}
+
+			if (basic_block->should_skip())
+			{
+				continue;
 			}
 
 			if (config->linear_substitution)
 			{
-				binprotect::linear_substitution::do_pass(pe, *basic_block);
+				binprotect::linear_substitution::do_pass(pe, *basic_block, in_seh);
 			}
 
 			for (std::uint8_t pass = 0; pass < config->mixed_boolean_arithmetic_count; pass++)
@@ -157,16 +179,21 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		}
 	}
 
-	for (const auto& opaque_block : opaque_blocks)
+	for (const auto& [block, in_seh] : opaque_blocks)
 	{
+		if (block->should_skip())
+		{
+			continue;
+		}
+
 		if (config->linear_substitution)
 		{
-			binprotect::linear_substitution::do_pass(pe, *opaque_block);
+			binprotect::linear_substitution::do_pass(pe, *block, in_seh);
 		}
 
 		for (std::uint8_t pass = 0; pass < config->mixed_boolean_arithmetic_count; pass++)
 		{
-			binprotect::mba::do_pass(pe, *opaque_block, true);
+			binprotect::mba::do_pass(pe, *block, true);
 		}
 	}
 

@@ -171,7 +171,9 @@ void binprotect::opaque_predicate::do_pass(binwrite::binary_t& binary,
 		return;
 	}
 
-	for (const auto& ref : binary.find_all_symbol_refs_by_self(basic_block))
+	const auto refs_to_migrate = binary.find_all_symbol_refs_by_self(basic_block);
+
+	for (const auto& ref : refs_to_migrate)
 	{
 		const auto code_ref = std::dynamic_pointer_cast<binwrite::code_symbol_ref_t>(ref);
 

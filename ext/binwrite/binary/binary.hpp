@@ -288,6 +288,32 @@ namespace binwrite
 			return result;
 		}
 
+		[[nodiscard]] bool has_code_ref_from_instruction(const std::shared_ptr<symbol_t>& self,
+			const instruction_t::id_type instr_id) const
+		{
+			if (instr_id == 0)
+			{
+				return false;
+			}
+
+			for (const auto& ref : symbol_refs_)
+			{
+				if (ref->self() != self)
+				{
+					continue;
+				}
+
+				const auto code_ref = std::dynamic_pointer_cast<code_symbol_ref_t>(ref);
+
+				if (code_ref && code_ref->self_instr_id() == instr_id)
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 	protected:
 		virtual void find_data_rvas() = 0;
 		virtual void find_sections() = 0;
