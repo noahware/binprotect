@@ -1,4 +1,3 @@
-#if 0
 #include "vm_context.hpp"
 #include <spdlog/spdlog.h>
 
@@ -8,7 +7,7 @@ void vm_context_t::enter_virtualized_state(binwrite::binary_t& binary)
 
 	push_registers(instructions);
 
-	entry_block_ = previous_block_ = binary.create_basic_block(*insertion_rva_, instructions);
+	entry_block_ = previous_block_ = binary.create_basic_block(instructions);
 	virtualized_state_ = true;
 
 	basic_blocks_.push_back(entry_block_);
@@ -27,8 +26,8 @@ void vm_context_t::exit_virtualized_state(binwrite::binary_t& binary)
 
 	pop_registers(instructions);
 
-	previous_block_->push(binary, instructions, false, true);
-	previous_block_->push(binary, ret_instruction().value(), false, true);
+	previous_block_->push(binary, instructions, true);
+	previous_block_->push(binary, ret_instruction().value(), true);
 
 	segments_.push_back({ entry_block_, previous_block_, stack_registers_ });
 
@@ -64,13 +63,13 @@ void vm_context_t::compile_instruction(binwrite::binary_t& binary)
 		enter_virtualized_state(binary);
 	}
 
-	previous_block_->push(binary, current_instruction_.load, false, true);
+	previous_block_->push(binary, current_instruction_.load, true);
 
-	const auto handler_block = binary.create_basic_block(*insertion_rva_, current_instruction_.handler);
+	const auto handler_block = binary.create_basic_block(current_instruction_.handler);
 
 	push_jump_to_block(binary, previous_block_, handler_block);
 
-	previous_block_ = binary.create_basic_block(*insertion_rva_, current_instruction_.unload);
+	previous_block_ = binary.create_basic_block(current_instruction_.unload);
 
 	basic_blocks_.push_back(previous_block_);
 	basic_blocks_.push_back(handler_block);
@@ -78,11 +77,6 @@ void vm_context_t::compile_instruction(binwrite::binary_t& binary)
 	push_jump_to_block(binary, handler_block, previous_block_);
 
 	free_instruction();
-}
-
-void vm_context_t::set_insertion_rva(std::shared_ptr<binwrite::rva_t> rva)
-{
-	insertion_rva_ = std::move(rva);
 }
 
 hardware_register_t vm_context_t::random_hardware_register()
@@ -547,4 +541,3 @@ void vm_context_t::save_flags(std::vector<binwrite::instruction_t>& instructions
 
 	instructions.push_back(mov_instruction(holder->qword, flags_to_stack(operand_offset)).value());
 }
-#endif

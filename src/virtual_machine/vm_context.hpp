@@ -54,8 +54,6 @@ public:
 	void process_instruction(const binwrite::disassembled_instruction_t& instruction_disassembly);
 	void compile_instruction(binwrite::binary_t& binary);
 
-	void set_insertion_rva(std::shared_ptr<binwrite::rva_t> rva);
-
 	[[nodiscard]] hardware_register_t random_hardware_register();
 	void free_hardware_register(const hardware_register_t& hardware_register);
 
@@ -259,11 +257,15 @@ protected:
 		const auto destination_placeholder = encode_unsigned_imm_operand(1);
 		const auto jump_instruction = jmp_instruction(destination_placeholder).value();
 
-		source_block->push(binary, jump_instruction, false, true);
+		source_block->push(binary, jump_instruction, true);
 
-		const binwrite::rva_t jump_instruction_rva = source_block->last_instruction_rva();
+		const auto ref = std::make_shared<binwrite::code_symbol_ref_t>(
+			target_block, source_block,
+			static_cast<binwrite::symbol_ref_t::size_type>(jump_instruction.size()));
 
-		binary.add_rva_ref(std::make_shared<binwrite::code_rva_ref_t>(target_block->rva(), jump_instruction_rva, jump_instruction.size()));
+		ref->set_self_instr_id(source_block->last_instruction().id());
+
+		binary.add_symbol_ref(ref);
 	}
 
 	vm_instruction_t current_instruction_ = { };
@@ -277,6 +279,5 @@ protected:
 	std::deque<binwrite::register_family_t> free_registers_ = { };
 	std::vector<hardware_register_t> temporary_holding_registers_ = { };
 
-	std::shared_ptr<binwrite::rva_t> insertion_rva_;
 	bool virtualized_state_ = false;
 };

@@ -186,6 +186,22 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 			continue;
 		}
 
+		bool virtualized = false;
+
+		if (config->virtual_machine && !exceptions_context.is_in_seh_range(basic_block->rva()->value()))
+		{
+			if (const auto vm_context = binprotect::vm::do_pass(pe, *basic_block, virtual_machine_blocks))
+			{
+				vm_contexts.push_back(vm_context);
+				virtualized = !vm_context->basic_blocks().empty();
+			}
+		}
+
+		if (virtualized)
+		{
+			continue;
+		}
+
 		if (config->linear_substitution)
 		{
 			binprotect::linear_substitution::do_pass(pe, *block, in_seh);

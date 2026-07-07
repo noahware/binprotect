@@ -1,4 +1,3 @@
-#if 0
 #include "virtual_machine.hpp"
 #include "vm_context.hpp"
 
@@ -57,26 +56,28 @@ static bool is_safe_vm_instruction(const binwrite::disassembled_instruction_t& i
 }
 
 static void insert_call_to_block(binwrite::binary_t& binary,
-	binwrite::basic_block_t& source_block,
+	const std::shared_ptr<binwrite::basic_block_t>& source_block,
 	const binwrite::basic_block_t::size_type index,
-	const binwrite::basic_block_t& target_block)
+	const std::shared_ptr<binwrite::basic_block_t>& target_block)
 {
 	const auto destination_placeholder = encode_unsigned_imm_operand(1);
 	const auto instruction = call_instruction(destination_placeholder).value();
 
-	source_block.insert(binary, instruction, index);
+	source_block->insert(binary, instruction, index);
 
-	const binwrite::rva_t instruction_rva = source_block.instruction_rva(index);
+	const auto ref = std::make_shared<binwrite::code_symbol_ref_t>(
+		target_block, source_block,
+		static_cast<binwrite::symbol_ref_t::size_type>(instruction.size()));
 
-	binary.add_rva_ref(std::make_shared<binwrite::code_rva_ref_t>(target_block.rva(), instruction_rva, instruction.size()));
+	ref->set_self_instr_id(source_block->at(index).id());
+
+	binary.add_symbol_ref(ref);
 }
 
 std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary, binwrite::basic_block_t& basic_block,
-                             std::shared_ptr<binwrite::rva_t> insertion_rva,
                              std::vector<std::shared_ptr<binwrite::basic_block_t>>& virtual_machine_blocks)
 {
 	const auto context = std::make_shared<vm_context_t>(binwrite::register_family_t::general_purpose);
-	context->set_insertion_rva(std::move(insertion_rva));
 
 	const std::span<const binwrite::instruction_t> original_instructions = basic_block.instructions();
 	const std::vector instructions(original_instructions.begin(), original_instructions.end());
@@ -115,8 +116,9 @@ std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary
 			if (requires_entry)
 			{
 				const auto entry_block = context->entry_block();
+				const auto source_block = std::static_pointer_cast<binwrite::basic_block_t>(basic_block.shared_from_this());
 
-				insert_call_to_block(binary, basic_block, basic_block_index, *entry_block);
+				insert_call_to_block(binary, source_block, basic_block_index, entry_block);
 
 				basic_block.erase(binary, basic_block_index + 1);
 			}
@@ -206,4 +208,3 @@ void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
 		}
 	}
 }
-#endif
