@@ -15,6 +15,8 @@
 #include "config/config.hpp"
 #include "linear_substitution/linear_substitution.hpp"
 #include "mba/mba.hpp"
+#include "virtual_machine/virtual_machine.hpp"
+#include "virtual_machine/vm_context.hpp"
 
 static std::vector<std::uint8_t> read_file_from_disk(const std::string& path)
 {
@@ -83,9 +85,11 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		exceptions_support = false;
 	}
 
+	binwrite::exception_context_t exceptions_context;
+
 	if (exceptions_support)
 	{
-		auto exceptions_context = binwrite::parse_exception_directory(pe);
+		exceptions_context = binwrite::parse_exception_directory(pe);
 	}
 
 	binwrite::queue_throw_info_code_targets(pe);
@@ -95,9 +99,31 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 	const auto rtti_result = binwrite::parse_rtti(pe);
 	binwrite::parse_throw_info(pe, rtti_result);
 
-	for (const auto& basic_block : pe.basic_blocks())
+	std::vector<std::shared_ptr<binwrite::basic_block_t>> virtual_machine_blocks;
+	std::vector<std::shared_ptr<vm_context_t>> vm_contexts;
+
+	const auto original_basic_blocks = pe.basic_blocks();
+	const std::vector basic_blocks(original_basic_blocks.begin(), original_basic_blocks.end());
+
+	for (const auto& basic_block : basic_blocks)
 	{
 		if (basic_block->should_skip())
+		{
+			continue;
+		}
+
+		bool virtualized = false;
+
+		if (config->virtual_machine && !exceptions_context.is_in_seh_range(basic_block->rva()->value()))
+		{
+			if (const auto vm_context = binprotect::vm::do_pass(pe, *basic_block, virtual_machine_blocks))
+			{
+				vm_contexts.push_back(vm_context);
+				virtualized = !vm_context->basic_blocks().empty();
+			}
+		}
+
+		if (virtualized)
 		{
 			continue;
 		}
@@ -113,8 +139,11 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		}
 	}
 
-	spdlog::info("applied linear substitution: {}, mba passes: {}",
-		config->linear_substitution ? "yes" : "no", config->mixed_boolean_arithmetic_count);
+	spdlog::info("applied linear substitution: {}, mba passes: {}, virtualized segments: {}",
+		config->linear_substitution ? "yes" : "no", config->mixed_boolean_arithmetic_count, vm_contexts.size());
+
+	binprotect::vm::emit_runtime_functions(pe, vm_contexts,
+		exceptions_context.exception_directory_rva, exceptions_context.unwind_info_insertion_rva);
 
 	pe.clear_symbol_rvas();
 	pe.recompile();
