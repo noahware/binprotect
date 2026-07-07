@@ -149,6 +149,10 @@ namespace binwrite
 
 		void add_rva_ref(std::shared_ptr<rva_ref_t> ref);
 		void add_symbol_ref(std::shared_ptr<symbol_ref_t> ref);
+		std::shared_ptr<code_symbol_ref_t> add_code_ref(
+			const std::shared_ptr<basic_block_t>& self,
+			const instruction_t& instruction,
+			const std::shared_ptr<symbol_t>& target);
 		void redirect_rva_ref(rva_t self, rva_t new_target);
 		void add_jump_table_target(rva_t dispatcher_rva, const std::shared_ptr<rva_t>& target);
 
@@ -282,6 +286,32 @@ namespace binwrite
 			}
 
 			return result;
+		}
+
+		[[nodiscard]] bool has_code_ref_from_instruction(const std::shared_ptr<symbol_t>& self,
+			const instruction_t::id_type instr_id) const
+		{
+			if (instr_id == 0)
+			{
+				return false;
+			}
+
+			for (const auto& ref : symbol_refs_)
+			{
+				if (ref->self() != self)
+				{
+					continue;
+				}
+
+				const auto code_ref = std::dynamic_pointer_cast<code_symbol_ref_t>(ref);
+
+				if (code_ref && code_ref->self_instr_id() == instr_id)
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 	protected:

@@ -52,10 +52,10 @@ namespace binwrite
 
 		void move_entire(binary_t& binary, rva_t destination) const;
 
-		void push(binary_t& binary, const instruction_t& instruction, bool pre_existing = false, bool inclusive = false);
+		instruction_t& push(binary_t& binary, const instruction_t& instruction, bool pre_existing = false, bool inclusive = false);
 		void push(binary_t& binary, std::span<const instruction_t> instructions, bool pre_existing = false, bool inclusive = false);
 
-		void insert(binary_t& binary, const instruction_t& instruction, size_type index, bool inclusive = false);
+		instruction_t& insert(binary_t& binary, const instruction_t& instruction, size_type index, bool inclusive = false);
 		void insert(binary_t& binary, std::span<const instruction_t> instructions, size_type index, bool inclusive = false);
 
 		void erase(binary_t& binary, size_type index, size_type count, bool affects_buffer = true);

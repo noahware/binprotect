@@ -135,6 +135,11 @@ namespace binwrite
 			encoding_size_ = size;
 		}
 
+		[[nodiscard]] size_type encoding_size() const noexcept
+		{
+			return encoding_size_;
+		}
+
 	protected:
 		std::shared_ptr<symbol_t> self_;
 		std::shared_ptr<symbol_t> target_;
@@ -163,6 +168,11 @@ namespace binwrite
 		void set_self_instr_id(const instruction_t::id_type self_instr_id)
 		{
 			self_instr_id_ = self_instr_id;
+		}
+
+		[[nodiscard]] instruction_t::id_type self_instr_id() const noexcept
+		{
+			return self_instr_id_;
 		}
 
 	protected:

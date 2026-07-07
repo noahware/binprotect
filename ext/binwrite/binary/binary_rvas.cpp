@@ -144,6 +144,19 @@ void binwrite::binary_t::add_symbol_ref(std::shared_ptr<symbol_ref_t> ref)
 	symbol_refs_.push_back(std::move(ref));
 }
 
+std::shared_ptr<binwrite::code_symbol_ref_t> binwrite::binary_t::add_code_ref(
+	const std::shared_ptr<basic_block_t>& self,
+	const instruction_t& instruction,
+	const std::shared_ptr<symbol_t>& target)
+{
+	auto ref = std::make_shared<code_symbol_ref_t>(
+		target, self, static_cast<symbol_ref_t::size_type>(instruction.size())
+	);
+	ref->set_self_instr_id(instruction.id());
+	symbol_refs_.push_back(ref);
+	return ref;
+}
+
 bool binwrite::binary_t::is_rva_valid(const rva_t rva) const
 {
 	return rva.value() < size();

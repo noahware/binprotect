@@ -8,15 +8,16 @@
 
 #include <cstdint>
 #include <fstream>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <vector>
 
 #include "config/config.hpp"
+#include "control_flow/control_flow_flattening.hpp"
 #include "linear_substitution/linear_substitution.hpp"
 #include "mba/mba.hpp"
-#include "virtual_machine/virtual_machine.hpp"
-#include "virtual_machine/vm_context.hpp"
+#include "opaque_predicate/opaque_predicate.hpp"
 
 static std::vector<std::uint8_t> read_file_from_disk(const std::string& path)
 {
@@ -85,7 +86,7 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		exceptions_support = false;
 	}
 
-	binwrite::exception_context_t exceptions_context;
+	std::optional<binwrite::exception_context_t> exceptions_context;
 
 	if (exceptions_support)
 	{
@@ -99,15 +100,88 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 	const auto rtti_result = binwrite::parse_rtti(pe);
 	binwrite::parse_throw_info(pe, rtti_result);
 
-	std::vector<std::shared_ptr<binwrite::basic_block_t>> virtual_machine_blocks;
-	std::vector<std::shared_ptr<vm_context_t>> vm_contexts;
-
-	const auto original_basic_blocks = pe.basic_blocks();
-	const std::vector basic_blocks(original_basic_blocks.begin(), original_basic_blocks.end());
-
-	for (const auto& basic_block : basic_blocks)
+	if (config->control_flow_flattening)
 	{
-		if (basic_block->should_skip())
+		const auto is_block_fixed = [&exceptions_context](const std::shared_ptr<binwrite::basic_block_t>& block) -> bool
+		{
+			if (!exceptions_context)
+			{
+				return false;
+			}
+
+			return exceptions_context->is_in_seh_range(block->rva()->value());
+		};
+
+		for (const auto& function : pe.functions())
+		{
+			if (exceptions_context)
+			{
+				const auto function_rva = function->rva()->value();
+
+				if (exceptions_context->is_fh_function(function_rva) || exceptions_context->is_handler_function(function_rva))
+				{
+					continue;
+				}
+			}
+
+			binprotect::control_flow::flattening::do_pass(pe, *function, is_block_fixed);
+		}
+	}
+
+	struct opaque_block_t
+	{
+		std::shared_ptr<binwrite::basic_block_t> block;
+		bool in_seh_range;
+	};
+
+	std::vector<opaque_block_t> opaque_blocks;
+
+	{
+		const auto blocks_snapshot = std::vector(pe.basic_blocks().begin(), pe.basic_blocks().end());
+
+		for (const auto& basic_block : blocks_snapshot)
+		{
+			if (basic_block->should_skip())
+			{
+				continue;
+			}
+
+			const bool in_seh = exceptions_context && basic_block->rva() &&
+				exceptions_context->is_in_seh_range(basic_block->rva()->value());
+
+			if (config->opaque_predicates)
+			{
+				const auto before = opaque_blocks.size();
+
+				std::vector<std::shared_ptr<binwrite::basic_block_t>> new_opaque_blocks;
+				binprotect::opaque_predicate::do_pass(pe, basic_block, new_opaque_blocks);
+
+				for (auto& block : new_opaque_blocks)
+				{
+					opaque_blocks.push_back({ std::move(block), in_seh });
+				}
+			}
+
+			if (basic_block->should_skip())
+			{
+				continue;
+			}
+
+			if (config->linear_substitution)
+			{
+				binprotect::linear_substitution::do_pass(pe, *basic_block, in_seh);
+			}
+
+			for (std::uint8_t pass = 0; pass < config->mixed_boolean_arithmetic_count; pass++)
+			{
+				binprotect::mba::do_pass(pe, *basic_block, true);
+			}
+		}
+	}
+
+	for (const auto& [block, in_seh] : opaque_blocks)
+	{
+		if (block->should_skip())
 		{
 			continue;
 		}
@@ -130,28 +204,23 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 
 		if (config->linear_substitution)
 		{
-			binprotect::linear_substitution::do_pass(pe, *basic_block);
+			binprotect::linear_substitution::do_pass(pe, *block, in_seh);
 		}
 
 		for (std::uint8_t pass = 0; pass < config->mixed_boolean_arithmetic_count; pass++)
 		{
-			binprotect::mba::do_pass(pe, *basic_block, true);
+			binprotect::mba::do_pass(pe, *block, true);
 		}
 	}
 
-	spdlog::info("applied linear substitution: {}, mba passes: {}, virtualized segments: {}",
-		config->linear_substitution ? "yes" : "no", config->mixed_boolean_arithmetic_count, vm_contexts.size());
-
-	binprotect::vm::emit_runtime_functions(pe, vm_contexts,
-		exceptions_context.exception_directory_rva, exceptions_context.unwind_info_insertion_rva);
+	spdlog::info("applied opaque predicates: {}, linear substitution: {}, mba passes: {}",
+		config->opaque_predicates ? "yes" : "no",
+		config->linear_substitution ? "yes" : "no", config->mixed_boolean_arithmetic_count);
 
 	pe.clear_symbol_rvas();
 	pe.recompile();
 
-
-
 	write_output_binary(pe, config->output_binary_file_path);
-
 
 	return 0;
 }

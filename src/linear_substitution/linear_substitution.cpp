@@ -246,8 +246,10 @@ static std::vector<binwrite::instruction_t> substitute_single_instruction(
 	return instructions;
 }
 
-void binprotect::linear_substitution::do_pass(binwrite::binary_t& binary, binwrite::basic_block_t& basic_block)
+void binprotect::linear_substitution::do_pass(binwrite::binary_t& binary, binwrite::basic_block_t& basic_block,
+                                              const bool skip_memory_operands)
 {
+	const auto self_symbol = basic_block.shared_from_this();
 	const std::span<const binwrite::instruction_t> original_instructions = basic_block.instructions();
 	const std::vector instructions(original_instructions.begin(), original_instructions.end());
 
@@ -261,7 +263,12 @@ void binprotect::linear_substitution::do_pass(binwrite::binary_t& binary, binwri
 		const std::uint32_t basic_block_index = i + added;
 
 		if (disassembled_instruction.rip_relative() || disassembled_instruction.writes_stack_pointer() ||
-			disassembled_instruction.has_lock())
+			disassembled_instruction.has_lock() || binary.has_code_ref_from_instruction(self_symbol, instruction.id()))
+		{
+			continue;
+		}
+
+		if (skip_memory_operands && disassembled_instruction.has_visible_mem_operand())
 		{
 			continue;
 		}
