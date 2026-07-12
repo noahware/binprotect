@@ -378,6 +378,7 @@ namespace binwrite
 		std::vector<std::shared_ptr<rva_t>> rva_blocks_;
 
 		std::vector<std::shared_ptr<rva_t>> rvas_;
+		std::unordered_map<std::uint64_t, std::weak_ptr<rva_t>> rvas_index_;
 		std::vector<std::shared_ptr<rva_ref_t>> rva_refs_;
 
 		std::vector<std::shared_ptr<basic_block_t>> basic_blocks_;

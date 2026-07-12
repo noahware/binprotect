@@ -55,8 +55,7 @@ bool binwrite::disassembler_t::decode_operands(const ZydisDecoderContext* const 
 
 std::optional<std::uint8_t> binwrite::find_displacement_offset(const std::uint8_t* const instruction, const std::uint32_t size)
 {
-	ZydisDecoder decoder;
-	ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
+	thread_local const auto decoder = []() { ZydisDecoder d; ZydisDecoderInit(&d, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64); return d; }();
 
 	ZydisDecodedInstruction decoded;
 	ZydisDecoderContext context;

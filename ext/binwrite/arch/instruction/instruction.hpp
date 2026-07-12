@@ -48,7 +48,7 @@ namespace binwrite
 		instruction_t(const instruction_t& right)
 				:	size_(right.size_),
 					id_(right.id_),
-					disassembly_(nullptr)
+					disassembly_(right.disassembly_ ? std::make_unique<disassembled_instruction_t>(*right.disassembly_) : nullptr)
 		{
 			std::memcpy(bytes_.data(), right.bytes_.data(), right.size_);
 		}
@@ -57,9 +57,9 @@ namespace binwrite
 		{
 			if (this != &right)
 			{
-				disassembly_.reset();
 				size_ = right.size_;
 				id_ = right.id_;
+				disassembly_ = right.disassembly_ ? std::make_unique<disassembled_instruction_t>(*right.disassembly_) : nullptr;
 
 				std::memcpy(bytes_.data(), right.bytes_.data(), right.size_);
 			}
@@ -119,7 +119,7 @@ namespace binwrite
 				return;
 			}
 
-			const disassembler_t disassembler;
+			thread_local const disassembler_t disassembler;
 
 			auto disassembly = disassembler.disassemble({ bytes_.data(), size_ });
 

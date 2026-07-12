@@ -433,7 +433,12 @@ void binwrite::binary_t::erase_symbol(std::shared_ptr<symbol_t> symbol)
 	if (const auto bb = std::dynamic_pointer_cast<basic_block_t>(symbol))
 	{
 		std::erase(basic_blocks_, bb);
-		bb_index_dirty_ = true;
+
+		if (const auto rva = bb->rva())
+		{
+			bb_index_.erase(rva->value());
+			bb_interval_index_.erase(rva->value());
+		}
 	}
 }
 

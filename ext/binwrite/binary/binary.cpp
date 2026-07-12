@@ -122,10 +122,11 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
 	section.add_symbol(basic_block);
 	symbols_.push_back(basic_block);
 	basic_blocks_.push_back(basic_block);
-	bb_index_dirty_ = true;
 
 	if (rva)
 	{
+		bb_index_[rva->value()] = basic_block;
+		bb_interval_index_[rva->value()] = basic_block;
 		disassembly_symbol_map_[rva->value()] = basic_block;
 	}
 
@@ -195,7 +196,11 @@ void binwrite::binary_t::unlink_basic_block(std::shared_ptr<basic_block_t> basic
 		function->unlink_basic_block(basic_block);
 	}
 
-	bb_index_dirty_ = true;
+	if (const auto rva = basic_block->rva())
+	{
+		bb_index_.erase(rva->value());
+		bb_interval_index_.erase(rva->value());
+	}
 }
 
 std::span<std::shared_ptr<binwrite::basic_block_t>> binwrite::binary_t::basic_blocks()
@@ -296,7 +301,9 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 
 	basic_blocks_.push_back(new_basic_block);
 	symbols_.push_back(new_basic_block);
-	bb_index_dirty_ = true;
+
+	bb_index_[split_rva.value()] = new_basic_block;
+	bb_interval_index_[split_rva.value()] = new_basic_block;
 
 	if (const auto section = find_section(split_rva))
 	{
