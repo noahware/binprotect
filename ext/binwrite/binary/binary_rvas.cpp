@@ -57,9 +57,14 @@ void binwrite::binary_t::update_rvas(const rva_t disruption_rva, const rva_t::si
 		update_section_rvas(disruption_rva, disruption_size);
 	}
 
+	rvas_index_.clear();
+
 	for (const auto& rva : rvas_)
 	{
 		rva->process_disruption(disruption_rva, disruption_size, inclusive);
+
+		const std::uint64_t key = (static_cast<std::uint64_t>(rva->value()) << 1) | (rva->force_inclusive() ? 1ULL : 0ULL);
+		rvas_index_[key] = rva;
 	}
 
 	for (const auto& rva_ref : rva_refs_)
@@ -114,17 +119,30 @@ std::vector<std::shared_ptr<binwrite::rva_ref_t>> binwrite::binary_t::find_all_t
 
 std::shared_ptr<binwrite::rva_t> binwrite::binary_t::add_rva(const rva_t::value_type value, const bool force_inclusive)
 {
+	const std::uint64_t key = (static_cast<std::uint64_t>(value) << 1) | (force_inclusive ? 1ULL : 0ULL);
+
+	if (const auto it = rvas_index_.find(key); it != rvas_index_.end())
+	{
+		if (auto existing = it->second.lock();
+			existing && existing->value() == value && existing->force_inclusive() == force_inclusive)
+		{
+			return existing;
+		}
+	}
+
 	for (const auto& existing_rva : rvas_)
 	{
 		if (existing_rva->value() == value &&
 			existing_rva->force_inclusive() == force_inclusive)
 		{
+			rvas_index_[key] = existing_rva;
 			return existing_rva;
 		}
 	}
 
 	const auto rva = std::make_shared<rva_t>(value, force_inclusive);
 	rvas_.push_back(rva);
+	rvas_index_[key] = rva;
 
 	return rva;
 }

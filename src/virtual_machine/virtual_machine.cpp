@@ -97,13 +97,17 @@ std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary
 		}
 
 		const auto basic_block_index = i - erased;
-		const binwrite::rva_t instruction_rva = basic_block.instruction_rva(basic_block_index);
 
-		if (binary.find_rva_ref(instruction_rva))
+		if (basic_block.rva())
 		{
-			context->exit_virtualized_state(binary);
+			const binwrite::rva_t instruction_rva = basic_block.instruction_rva(basic_block_index);
 
-			continue;
+			if (binary.find_rva_ref(instruction_rva))
+			{
+				context->exit_virtualized_state(binary);
+
+				continue;
+			}
 		}
 
 		try

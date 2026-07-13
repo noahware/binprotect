@@ -18,6 +18,8 @@
 #include "linear_substitution/linear_substitution.hpp"
 #include "mba/mba.hpp"
 #include "opaque_predicate/opaque_predicate.hpp"
+#include "virtual_machine/virtual_machine.hpp"
+#include "virtual_machine/vm_context.hpp"
 
 static std::vector<std::uint8_t> read_file_from_disk(const std::string& path)
 {
@@ -135,6 +137,8 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 	};
 
 	std::vector<opaque_block_t> opaque_blocks;
+	std::vector<std::shared_ptr<binwrite::basic_block_t>> virtual_machine_blocks;
+	std::vector<std::shared_ptr<vm_context_t>> vm_contexts;
 
 	{
 		const auto blocks_snapshot = std::vector(pe.basic_blocks().begin(), pe.basic_blocks().end());
@@ -188,9 +192,9 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 
 		bool virtualized = false;
 
-		if (config->virtual_machine && !exceptions_context.is_in_seh_range(basic_block->rva()->value()))
+		if (config->virtual_machine && !in_seh)
 		{
-			if (const auto vm_context = binprotect::vm::do_pass(pe, *basic_block, virtual_machine_blocks))
+			if (const auto vm_context = binprotect::vm::do_pass(pe, *block, virtual_machine_blocks))
 			{
 				vm_contexts.push_back(vm_context);
 				virtualized = !vm_context->basic_blocks().empty();
@@ -213,9 +217,15 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 		}
 	}
 
-	spdlog::info("applied opaque predicates: {}, linear substitution: {}, mba passes: {}",
+	spdlog::info("applied opaque predicates: {}, linear substitution: {}, mba passes: {}, virtualized segments: {}",
 		config->opaque_predicates ? "yes" : "no",
-		config->linear_substitution ? "yes" : "no", config->mixed_boolean_arithmetic_count);
+		config->linear_substitution ? "yes" : "no", config->mixed_boolean_arithmetic_count, vm_contexts.size());
+
+	if (exceptions_context)
+	{
+		binprotect::vm::emit_runtime_functions(pe, vm_contexts,
+			exceptions_context->exception_directory_rva, exceptions_context->unwind_info_insertion_rva);
+	}
 
 	pe.clear_symbol_rvas();
 	pe.recompile();
