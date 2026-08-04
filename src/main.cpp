@@ -223,8 +223,7 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 
 	if (exceptions_context)
 	{
-		binprotect::vm::emit_runtime_functions(pe, vm_contexts,
-			exceptions_context->exception_directory_rva, exceptions_context->unwind_info_insertion_rva);
+		binprotect::vm::emit_runtime_functions(pe, vm_contexts);
 	}
 
 	pe.clear_symbol_rvas();

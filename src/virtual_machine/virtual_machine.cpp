@@ -147,15 +147,8 @@ std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary
 }
 
 void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
-                                            const std::vector<std::shared_ptr<vm_context_t>>& vm_contexts,
-											const std::shared_ptr<binwrite::rva_t>& exception_directory_rva,
-                                            const std::shared_ptr<binwrite::rva_t>& unwind_insertion_rva)
+                                            const std::vector<std::shared_ptr<vm_context_t>>& vm_contexts)
 {
-	if (!exception_directory_rva || !unwind_insertion_rva)
-	{
-		return;
-	}
-
 	for (const auto& vm_context : vm_contexts)
 	{
 		for (const auto& vm_segment : vm_context->segments())
@@ -208,8 +201,7 @@ void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
 				.frame_offset = 0,
 				.prolog_size = current_offset,
 				.flags = 0
-			}, exception_directory_rva,
-			unwind_insertion_rva);
+			});
 		}
 	}
 }
