@@ -102,6 +102,12 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 	const auto rtti_result = binwrite::parse_rtti(pe);
 	binwrite::parse_throw_info(pe, rtti_result);
 
+	if (exceptions_context)
+	{
+		binwrite::split_prologues(pe, *exceptions_context);
+		binwrite::rewrite_frame_pointers(pe, *exceptions_context);
+	}
+
 	if (config->control_flow_flattening)
 	{
 		const auto is_block_fixed = [&exceptions_context](const std::shared_ptr<binwrite::basic_block_t>& block) -> bool

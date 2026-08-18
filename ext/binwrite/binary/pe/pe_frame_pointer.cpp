@@ -58,7 +58,8 @@ namespace binwrite
 		const std::shared_ptr<function_t>& function,
 		portable_executable_t& pe,
 		block_insertion_list_t& block_instructions,
-		const instruction_t& pop_instruction);
+		const instruction_t& pop_instruction,
+		const std::unordered_set<rva_t::value_type>& runtime_function_blocks);
 
 	void adjust_catch_handler_displacements(
 		portable_executable_t& pe,
@@ -570,7 +571,7 @@ void binwrite::rewrite_frame_pointers(portable_executable_t& pe, exception_conte
 		adjust_catch_handler_displacements(pe, context.catch_handlers[runtime_function->begin_address],
 			current_stack_offset, block_instructions, processed_catch_functions);
 
-		insert_exit_block_pops(function, pe, block_instructions, setup.pop_instruction);
+		insert_exit_block_pops(function, pe, block_instructions, setup.pop_instruction, visited);
 
 		apply_frame_pointer_unwind_info(pe, unwind_info, setup.push_code_first, setup.push_code_second,
 			setup.frame_pointer_code, unwind_register, setup.added_size, copied_unwind_info,

@@ -60,7 +60,8 @@ namespace binwrite
 		const std::shared_ptr<function_t>& function,
 		portable_executable_t& pe,
 		block_insertion_list_t& block_instructions,
-		const instruction_t& pop_instruction);
+		const instruction_t& pop_instruction,
+		const std::unordered_set<rva_t::value_type>& runtime_function_blocks);
 
 	void apply_deferred_insertions(
 		portable_executable_t& pe,
@@ -467,31 +468,64 @@ void binwrite::insert_exit_block_pops(
 	const std::shared_ptr<function_t>& function,
 	portable_executable_t& pe,
 	block_insertion_list_t& block_instructions,
-	const instruction_t& pop_instruction)
+	const instruction_t& pop_instruction,
+	const std::unordered_set<rva_t::value_type>& runtime_function_blocks)
 {
-	const auto exits = function->exit_blocks(pe);
-
-	for (const auto& exit_block : exits)
+	// a function's block list can hold blocks the disassembler folded in that are outside of the
+	// runtime function's own range, such as shared import thunks and tail jump targets. exits must
+	// be decided against that range: popping inside a shared thunk corrupts every other caller, and
+	// a tail jump whose target was folded in stops looking like an exit and never gets its pops
+	for (const auto& basic_block : function->basic_blocks())
 	{
-		if (!pe.jump_table_targets(exit_block->last_instruction_rva()).empty())
+		if (!basic_block || !basic_block->rva() ||
+			!runtime_function_blocks.contains(basic_block->rva()->value()))
 		{
 			continue;
+		}
+
+		const auto& last_instruction_rva = basic_block->last_instruction_rva();
+		const auto& last_disassembly = basic_block->last_instruction().disassemble();
+
+		if (!last_disassembly.is_ret())
+		{
+			if (!last_disassembly.is_unconditional_jump())
+			{
+				continue;
+			}
+
+			if (!pe.jump_table_targets(last_instruction_rva).empty())
+			{
+				continue;
+			}
+
+			const auto code_rva_ref = pe.find_rva_ref(last_instruction_rva);
+
+			if (code_rva_ref)
+			{
+				const auto target_basic_block = pe.find_basic_block(*code_rva_ref->target());
+
+				if (target_basic_block && target_basic_block->rva() &&
+					runtime_function_blocks.contains(target_basic_block->rva()->value()))
+				{
+					continue;
+				}
+			}
 		}
 
 		std::uint32_t previous_count = 0;
 
 		for (const auto& [block, instruction, index] : block_instructions)
 		{
-			if (exit_block == block)
+			if (basic_block == block)
 			{
 				previous_count++;
 			}
 		}
 
-		const std::uint32_t pop_index = static_cast<std::uint32_t>(exit_block->count()) - 1 + previous_count;
+		const std::uint32_t pop_index = static_cast<std::uint32_t>(basic_block->count()) - 1 + previous_count;
 
-		block_instructions.emplace_back(exit_block, pop_instruction, pop_index);
-		block_instructions.emplace_back(exit_block, pop_instruction, pop_index);
+		block_instructions.emplace_back(basic_block, pop_instruction, pop_index);
+		block_instructions.emplace_back(basic_block, pop_instruction, pop_index);
 	}
 }
 
@@ -530,33 +564,15 @@ void binwrite::apply_deferred_insertions(
 		}
 	}
 
-	std::unordered_map<basic_block_t*, std::uint32_t> index_zero_counts;
-
+	// the instructions inserted at index 0 deliberately stay in the entry block. splitting them off
+	// leaves a two instruction entry block, and a later pass that appends to the entry (such as
+	// control flow flattening's dispatcher anchor) then lands in the middle of the prologue, which
+	// invalidates every unwind code offset for the function
 	for (const auto& [basic_block, instruction, index] : block_instructions)
 	{
 		const bool inclusive = index != 0;
+
 		basic_block->insert(pe, instruction, index, inclusive);
-
-		if (index == 0)
-		{
-			index_zero_counts[basic_block.get()]++;
-		}
-	}
-
-	for (const auto& [block_ptr, count] : index_zero_counts)
-	{
-		const auto block = std::dynamic_pointer_cast<basic_block_t>(block_ptr->shared_from_this());
-		const auto remainder = block->split_at(pe, count);
-
-		if (!remainder)
-		{
-			continue;
-		}
-
-		for (const auto& ref : pe.find_all_symbol_refs_by_self(block))
-		{
-			ref->set_self(remainder);
-		}
 	}
 }
 
