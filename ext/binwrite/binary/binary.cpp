@@ -16,29 +16,6 @@ void binwrite::binary_t::parse()
 	find_data_rvas();
 }
 
-void binwrite::binary_t::insert(const rva_t rva, const std::span<const std::uint8_t> data, const bool inclusive)
-{
-	buffer_.insert(buffer_.begin() + rva.value(), data.begin(), data.end());
-
-	update_rvas(rva, static_cast<rva_t::size_type>(data.size()), inclusive);
-}
-
-void binwrite::binary_t::insert(const rva_t rva, const rva_t::size_type size, const bool inclusive)
-{
-	buffer_.insert(buffer_.begin() + rva.value(), size, 0);
-
-	update_rvas(rva, size, inclusive);
-}
-
-void binwrite::binary_t::erase(const rva_t rva, const rva_t::size_type size, const bool inclusive)
-{
-	const auto start = buffer_.begin() + rva.value();
-
-	buffer_.erase(start, start + size);
-
-	update_rvas(rva, -size, inclusive);
-}
-
 std::span<std::shared_ptr<binwrite::function_t>> binwrite::binary_t::functions()
 {
 	return functions_;
@@ -68,7 +45,7 @@ std::shared_ptr<binwrite::function_t> binwrite::binary_t::find_function(const rv
 
 void binwrite::binary_t::add_function(const std::shared_ptr<function_t>& function)
 {
-	const auto rva = *function->rva();
+	const auto rva = function->rva();
 
 	if (find_function(rva))
 	{
@@ -116,7 +93,7 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::create_basic_block(
 
 	if (rva)
 	{
-		basic_block->set_block_rva(add_rva(*rva));
+		basic_block->set_original_rva(rva);
 	}
 
 	section.add_symbol(basic_block);
@@ -166,13 +143,12 @@ std::shared_ptr<binwrite::function_t> binwrite::binary_t::create_function(const 
 		return existing_function;
 	}
 
-	const auto added_rva = add_rva(rva);
-	const auto function = std::make_shared<function_t>(name, added_rva);
+	const auto function = std::make_shared<function_t>(name, rva);
 
 	functions_.push_back(function);
 	fn_index_[rva.value()] = function;
 
-	add_to_disassembly_queue(added_rva);
+	add_to_disassembly_queue(rva);
 
 	return function;
 }
@@ -196,7 +172,7 @@ void binwrite::binary_t::unlink_basic_block(std::shared_ptr<basic_block_t> basic
 		function->unlink_basic_block(basic_block);
 	}
 
-	if (const auto rva = basic_block->rva())
+	if (const auto rva = basic_block->original_rva())
 	{
 		bb_index_.erase(rva->value());
 		bb_interval_index_.erase(rva->value());
@@ -293,7 +269,7 @@ bool binwrite::binary_t::is_inside_basic_block(const rva_t rva) const
 	return find_containing_basic_block(rva) != nullptr;
 }
 
-std::span<const std::shared_ptr<binwrite::rva_t>> binwrite::binary_t::jump_table_targets(const rva_t dispatcher_rva) const
+std::span<const binwrite::rva_t> binwrite::binary_t::jump_table_targets(const rva_t dispatcher_rva) const
 {
 	const auto it = jump_table_targets_.find(dispatcher_rva.value());
 
@@ -312,7 +288,7 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 		return { };
 	}
 
-	const auto split_rva = basic_block.instruction_rva(index);
+	const auto split_rva = basic_block.original_instruction_rva(index);
 
 	const basic_block_t::size_type split_count = basic_block.count() - index;
 
@@ -322,15 +298,14 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 	const auto end = start + split_count;
 
 	const std::vector new_block_instructions(start, end);
-	const auto offset_rva = add_rva(split_rva);
 
-	basic_block.erase(*this, index, split_count, false);
+	basic_block.erase(*this, index, split_count);
 
 	auto new_basic_block = std::make_shared<basic_block_t>();
 
 	new_basic_block->set_rva(split_rva);
-	new_basic_block->set_block_rva(offset_rva);
-	new_basic_block->push(*this, new_block_instructions, true);
+	new_basic_block->set_original_rva(split_rva);
+	new_basic_block->push(*this, new_block_instructions);
 
 	basic_blocks_.push_back(new_basic_block);
 	symbols_.push_back(new_basic_block);
@@ -364,16 +339,6 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 	return new_basic_block;
 }
 
-std::vector<std::shared_ptr<binwrite::rva_t>> binwrite::binary_t::rvas()
-{
-	return rvas_;
-}
-
-std::vector<std::shared_ptr<binwrite::rva_ref_t>> binwrite::binary_t::rva_refs()
-{
-	return rva_refs_;
-}
-
 std::unordered_map<std::string, std::shared_ptr<binwrite::section_t>>& binwrite::binary_t::sections()
 {
 	return sections_;
@@ -402,14 +367,14 @@ std::vector<std::shared_ptr<binwrite::section_t>> binwrite::binary_t::ordered_se
 
 void binwrite::binary_t::add_data_symbol(const rva_t rva)
 {
-	data_symbols_.push_back(add_rva(rva));
+	data_symbols_.push_back(rva);
 }
 
 bool binwrite::binary_t::is_data_symbol(const rva_t rva) const
 {
 	for (const auto& data_symbol : data_symbols_)
 	{
-		if (*data_symbol == rva)
+		if (data_symbol == rva)
 		{
 			return true;
 		}
@@ -541,7 +506,7 @@ void binwrite::binary_t::reindex_basic_blocks() const
 
 	for (const auto& basic_block : basic_blocks_)
 	{
-		const auto rva = basic_block->rva();
+		const auto rva = basic_block->original_rva();
 
 		if (!rva)
 		{
@@ -660,19 +625,19 @@ void binwrite::binary_t::reindex_functions() const
 
 	for (const auto& function : functions_)
 	{
-		fn_index_[function->rva()->value()] = function;
+		fn_index_[function->rva().value()] = function;
 	}
 
 	fn_index_dirty_ = false;
 }
 
-void binwrite::binary_t::add_jump_table_target(const rva_t dispatcher_rva, const std::shared_ptr<rva_t>& target)
+void binwrite::binary_t::add_jump_table_target(const rva_t dispatcher_rva, const rva_t target)
 {
 	auto& targets = jump_table_targets_[dispatcher_rva.value()];
 
 	for (const auto& existing_target : targets)
 	{
-		if (*existing_target == *target)
+		if (existing_target == target)
 		{
 			return;
 		}

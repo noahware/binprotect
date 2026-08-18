@@ -257,7 +257,7 @@ protected:
 		const auto destination_placeholder = encode_unsigned_imm_operand(1);
 		const auto jump_instruction = jmp_instruction(destination_placeholder).value();
 
-		source_block->push(binary, jump_instruction, true);
+		source_block->push(binary, jump_instruction);
 
 		const auto ref = std::make_shared<binwrite::code_symbol_ref_t>(
 			target_block, source_block,

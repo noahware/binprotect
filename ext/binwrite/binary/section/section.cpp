@@ -48,34 +48,6 @@ binwrite::section_t::section_t(const rva_t rva, const size_type size, const size
 {
 }
 
-void binwrite::section_t::process_disruption(const rva_t disruption_rva, const rva_t::size_type disruption_size)
-{
-	if (contains(disruption_rva))
-	{
-		size_ += disruption_size;
-	}
-
-	rva_.process_disruption(disruption_rva, disruption_size, false);
-}
-
-void binwrite::section_t::insert(binary_t& binary, const rva_t section_offset, const std::span<const std::uint8_t> data)
-{
-	if (size_ < section_offset.value())
-	{
-		return;
-	}
-
-	auto& buffer = binary.buffer();
-
-	const rva_t insertion_rva(rva_.value() + section_offset.value());
-
-	buffer.insert(buffer.begin() + insertion_rva.value(), data.begin(), data.end());
-
-	binary.update_rvas(insertion_rva, static_cast<rva_t::size_type>(data.size()), true, false);
-
-	size_ += static_cast<size_type>(data.size());
-}
-
 binwrite::rva_t binwrite::section_t::rva() const
 {
 	return rva_;

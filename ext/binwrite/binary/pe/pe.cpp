@@ -81,7 +81,7 @@ bool binwrite::portable_executable_t::is_inside_runtime_function(rva_t rva) cons
 	return std::ranges::any_of(runtime_functions_,
 		[rva](const runtime_function_t& runtime_function)
 		{
-			return *runtime_function.begin <= rva && rva < *runtime_function.end;
+			return runtime_function.begin <= rva && rva < runtime_function.end;
 		}
 	);
 }

@@ -33,8 +33,8 @@ static void register_func_info_handler(portable_executable_t& pe,
 	const std::int32_t* const rva_field, const std::uint32_t rva_value,
 	std::vector<rva_t>& vec)
 {
-	pe.add_data_rva_ref(rva_field);
-	pe.add_to_disassembly_queue(pe.add_rva(rva_value));
+	pe.record_data_ref(rva_field);
+	pe.add_to_disassembly_queue(rva_t(rva_value));
 	vec.emplace_back(rva_value);
 }
 
@@ -76,32 +76,32 @@ static bool parse_c_scope_table(portable_executable_t& pe, const std::uint32_t* 
 		}
 
 		seh_code_ranges.push_back({
-			.begin = pe.add_rva(table_entry->begin_rva),
-			.end = pe.add_rva(table_entry->end_rva)
+			.begin = rva_t(table_entry->begin_rva),
+			.end = rva_t(table_entry->end_rva)
 			});
 
 		if (pe.is_in_code_section(rva_t{ table_entry->begin_rva }))
 		{
-			pe.add_data_rva_ref(&table_entry->begin_rva);
+			pe.record_data_ref(&table_entry->begin_rva);
 		}
 
 		if (pe.is_in_code_section(rva_t{ table_entry->end_rva }))
 		{
-			pe.add_data_rva_ref(&table_entry->end_rva);
+			pe.record_data_ref(&table_entry->end_rva);
 		}
 
 		if (pe.is_in_code_section(rva_t{ table_entry->handler_rva }))
 		{
-			pe.add_data_rva_ref(&table_entry->handler_rva);
+			pe.record_data_ref(&table_entry->handler_rva);
 
-			pe.add_to_disassembly_queue(pe.add_rva(table_entry->handler_rva));
+			pe.add_to_disassembly_queue(rva_t(table_entry->handler_rva));
 		}
 
 		if (pe.is_in_code_section(rva_t{ table_entry->target_rva }))
 		{
-			pe.add_data_rva_ref(&table_entry->target_rva);
+			pe.record_data_ref(&table_entry->target_rva);
 
-			pe.add_to_disassembly_queue(pe.add_rva(table_entry->target_rva));
+			pe.add_to_disassembly_queue(rva_t(table_entry->target_rva));
 			func_handlers.emplace_back(table_entry->target_rva);
 		}
 	}
@@ -112,21 +112,21 @@ static bool parse_c_scope_table(portable_executable_t& pe, const std::uint32_t* 
 static void register_func_info_refs(portable_executable_t& pe, const cfh4::func_info4_t& func_info,
 	const std::uint32_t data_rva)
 {
-	const auto program_start_rva = pe.add_rva(0);
+	const auto program_start_rva = rva_t(0);
 
 	if (func_info.unwind_map_ref.ptr)
 	{
-		pe.add_data_rva_ref(reinterpret_cast<const std::int32_t*>(func_info.unwind_map_ref.ptr));
+		pe.record_data_ref(reinterpret_cast<const std::int32_t*>(func_info.unwind_map_ref.ptr));
 	}
 
 	if (func_info.try_block_map_ref.ptr)
 	{
-		pe.add_data_rva_ref(reinterpret_cast<const std::int32_t*>(func_info.try_block_map_ref.ptr));
+		pe.record_data_ref(reinterpret_cast<const std::int32_t*>(func_info.try_block_map_ref.ptr));
 	}
 
 	if (func_info.ip_to_state_map_ref.ptr)
 	{
-		pe.add_data_rva_ref(reinterpret_cast<const std::int32_t*>(func_info.ip_to_state_map_ref.ptr));
+		pe.record_data_ref(reinterpret_cast<const std::int32_t*>(func_info.ip_to_state_map_ref.ptr));
 	}
 
 	if (func_info.disp_frame_ref.ptr && func_info.header.is_catch)
@@ -139,12 +139,10 @@ static void register_func_info_refs(portable_executable_t& pe, const cfh4::func_
 		std::uint8_t* bytes_buffer = encoded_bytes.data();
 		std::uint8_t* start_buffer = bytes_buffer;
 
-		const auto target = pe.add_rva(cfh4::read_unsigned(&bytes_buffer));
+		const auto target = rva_t(cfh4::read_unsigned(&bytes_buffer));
 		const std::uint32_t encoded_size = static_cast<std::uint32_t>(bytes_buffer - start_buffer);
 
-		std::shared_ptr<rva_t> chunk_rva = pe.add_rva(data_rva);
-
-		pe.add_rva_ref(std::make_shared<pe_fh4_encoded_entry_t>(chunk_rva, program_start_rva, encoded_size, target, rva_t{ rva }));
+		pe.record_fh4_ref(rva_t{ rva }, target, program_start_rva, encoded_size);
 	}
 }
 
@@ -156,18 +154,17 @@ static void parse_ip_to_state_map(portable_executable_t& pe,
 {
 	cfh4::ip_to_state_map4_t ip2state_map(&func_info, image_base, function_start);
 
-	std::shared_ptr<rva_t> chunk_rva = pe.add_rva(func_info.disp_ip_to_state_map);
-	std::shared_ptr<rva_t> prev_ip2state = pe.add_rva(begin_address);
+	rva_t prev_ip2state{ begin_address };
 
 	for (auto entry : ip2state_map)
 	{
 		const rva_t::value_type rva = static_cast<rva_t::value_type>(entry.ip_ref.ptr - pe.data());
 
-		const auto ip2rva = std::make_shared<pe_fh4_encoded_entry_t>(chunk_rva, prev_ip2state, entry.ip_ref.size, pe.add_rva(entry.ip), rva_t{ rva });
+		const rva_t target{ static_cast<rva_t::value_type>(entry.ip) };
 
-		pe.add_rva_ref(ip2rva);
+		pe.record_fh4_ref(rva_t{ rva }, target, prev_ip2state, entry.ip_ref.size);
 
-		prev_ip2state = ip2rva->target();
+		prev_ip2state = target;
 	}
 }
 
@@ -184,14 +181,14 @@ static bool parse_try_block_handlers(portable_executable_t& pe,
 
 	for (auto entry : try_block_map)
 	{
-		pe.add_data_rva_ref(reinterpret_cast<std::int32_t*>(entry.disp_handler_array_ref.ptr));
+		pe.record_data_ref(reinterpret_cast<std::int32_t*>(entry.disp_handler_array_ref.ptr));
 
 		if (!pe.is_in_data_section(rva_t{ static_cast<rva_t::value_type>(entry.disp_handler_array) }))
 		{
 			return false;
 		}
 
-		std::shared_ptr<rva_t> chunk_rva = pe.add_rva(func_info.disp_try_block_map);
+		const rva_t chunk_rva = rva_t(func_info.disp_try_block_map);
 
 		cfh4::handler_map4_t handler_map(&entry, image_base, function_start);
 
@@ -199,49 +196,49 @@ static bool parse_try_block_handlers(portable_executable_t& pe,
 		{
 			if (handler_entry.disp_type)
 			{
-				pe.add_data_rva_ref(reinterpret_cast<std::int32_t*>(handler_entry.disp_type_ref.ptr));
+				pe.record_data_ref(reinterpret_cast<std::int32_t*>(handler_entry.disp_type_ref.ptr));
 			}
 			else // catches SEH if type == 0
 			{
 				catches_seh = true;
 			}
 			
-			pe.add_data_rva_ref(reinterpret_cast<std::int32_t*>(handler_entry.disp_of_handler_ref.ptr));
+			pe.record_data_ref(reinterpret_cast<std::int32_t*>(handler_entry.disp_of_handler_ref.ptr));
 
 			const auto first_cont_ptr = handler_entry.disp_of_handler_ref.ptr + 4;
-			std::shared_ptr<rva_t> function_rva = pe.add_rva(begin_address);
+			const rva_t function_rva = rva_t(begin_address);
 
 			if (handler_entry.header.cont_is_rva)
 			{
 				func_handlers.emplace_back(static_cast<std::uint32_t>(handler_entry.continuation_address[0]));
-				pe.add_to_disassembly_queue(pe.add_rva(static_cast<std::uint32_t>(handler_entry.continuation_address[0])));
+				pe.add_to_disassembly_queue(rva_t(static_cast<std::uint32_t>(handler_entry.continuation_address[0])));
 
 				if (handler_entry.header.cont_type() == cfh4::handler_type_header_t::cont_type_t::one)
 				{
-					pe.add_data_rva_ref(reinterpret_cast<std::int32_t*>(first_cont_ptr));
+					pe.record_data_ref(reinterpret_cast<std::int32_t*>(first_cont_ptr));
 				}
 				else if (handler_entry.header.cont_type() == cfh4::handler_type_header_t::cont_type_t::two)
 				{
-					pe.add_data_rva_ref(reinterpret_cast<std::int32_t*>(first_cont_ptr));
-					pe.add_data_rva_ref(reinterpret_cast<std::int32_t*>(first_cont_ptr + 4));
+					pe.record_data_ref(reinterpret_cast<std::int32_t*>(first_cont_ptr));
+					pe.record_data_ref(reinterpret_cast<std::int32_t*>(first_cont_ptr + 4));
 
 					func_handlers.emplace_back(static_cast<std::uint32_t>(handler_entry.continuation_address[1]));
-					pe.add_to_disassembly_queue(pe.add_rva(static_cast<std::uint32_t>(handler_entry.continuation_address[1])));
+					pe.add_to_disassembly_queue(rva_t(static_cast<std::uint32_t>(handler_entry.continuation_address[1])));
 				}
 			}
 			else
 			{
 				func_handlers.emplace_back(static_cast<std::uint32_t>(handler_entry.continuation_address[0]));
-				pe.add_to_disassembly_queue(pe.add_rva(static_cast<std::uint32_t>(handler_entry.continuation_address[0])));
+				pe.add_to_disassembly_queue(rva_t(static_cast<std::uint32_t>(handler_entry.continuation_address[0])));
 
-				const auto first_cont_rva = pe.add_rva(static_cast<std::uint32_t>(handler_entry.continuation_address[0]));
+				const auto first_cont_rva = rva_t(static_cast<std::uint32_t>(handler_entry.continuation_address[0]));
 
 				if (handler_entry.header.cont_type() == cfh4::handler_type_header_t::cont_type_t::one)
 				{
 					const rva_t::value_type rva = static_cast<rva_t::value_type>(first_cont_ptr - pe.data());
 					const auto cont_size = handler_entry.cont_ref[0].size;
 
-					pe.add_rva_ref(std::make_shared<pe_fh4_encoded_entry_t>(chunk_rva, function_rva, cont_size, first_cont_rva, rva_t{ rva }));
+					pe.record_fh4_ref(rva_t{ rva }, first_cont_rva, function_rva, cont_size);
 				}
 				else if (handler_entry.header.cont_type() == cfh4::handler_type_header_t::cont_type_t::two)
 				{
@@ -249,18 +246,18 @@ static bool parse_try_block_handlers(portable_executable_t& pe,
 					const auto first_size = handler_entry.cont_ref[0].size;
 					const auto second_size = handler_entry.cont_ref[1].size;
 
-					const auto second_cont_rva = pe.add_rva(static_cast<std::uint32_t>(handler_entry.continuation_address[1]));
+					const auto second_cont_rva = rva_t(static_cast<std::uint32_t>(handler_entry.continuation_address[1]));
 
-					pe.add_rva_ref(std::make_shared<pe_fh4_encoded_entry_t>(chunk_rva, function_rva, first_size, first_cont_rva, rva_t{ rva }));
-					pe.add_rva_ref(std::make_shared<pe_fh4_encoded_entry_t>(chunk_rva, function_rva, second_size, second_cont_rva, rva_t{ rva + first_size }));
+					pe.record_fh4_ref(rva_t{ rva }, first_cont_rva, function_rva, first_size);
+					pe.record_fh4_ref(rva_t{ rva + first_size }, second_cont_rva, function_rva, second_size);
 
 					func_handlers.emplace_back(static_cast<std::uint32_t>(handler_entry.continuation_address[1]));
-					pe.add_to_disassembly_queue(pe.add_rva(static_cast<std::uint32_t>(handler_entry.continuation_address[1])));
+					pe.add_to_disassembly_queue(rva_t(static_cast<std::uint32_t>(handler_entry.continuation_address[1])));
 				}
 			}
 
 			catch_handlers.emplace_back(static_cast<std::uint32_t>(handler_entry.disp_of_handler));
-			pe.add_to_disassembly_queue(pe.add_rva(static_cast<std::uint32_t>(handler_entry.disp_of_handler)));
+			pe.add_to_disassembly_queue(rva_t(static_cast<std::uint32_t>(handler_entry.disp_of_handler)));
 
 			spdlog::info("catch handler 0x{:X}", handler_entry.disp_of_handler);
 		}
@@ -286,7 +283,7 @@ static bool parse_cxx_funcinfo4(portable_executable_t& pe,
 
 	const auto data = pe.data() + *data_rva;
 
-	pe.add_data_rva_ref(data_rva);
+	pe.record_data_ref(data_rva);
 
 	cfh4::func_info4_t func_info;
 	const std::uint64_t image_base = reinterpret_cast<std::uint64_t>(pe.data());
@@ -363,26 +360,26 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 			return 0 <= offset && offset + size <= static_cast<std::int64_t>(buffer.size());
 		};
 
-	pe.add_data_rva_ref(language_data);
+	pe.record_data_ref(language_data);
 
 	if (func_info->disp_unwind_map)
 	{
-		pe.add_data_rva_ref(&func_info->disp_unwind_map);
+		pe.record_data_ref(&func_info->disp_unwind_map);
 	}
 
 	if (func_info->disp_try_block_map)
 	{
-		pe.add_data_rva_ref(&func_info->disp_try_block_map);
+		pe.record_data_ref(&func_info->disp_try_block_map);
 	}
 
 	if (func_info->disp_ip_to_state_map)
 	{
-		pe.add_data_rva_ref(&func_info->disp_ip_to_state_map);
+		pe.record_data_ref(&func_info->disp_ip_to_state_map);
 	}
 
 	if (func_info->disp_es_type_list)
 	{
-		pe.add_data_rva_ref(&func_info->disp_es_type_list);
+		pe.record_data_ref(&func_info->disp_es_type_list);
 	}
 
 	if (func_info->disp_unwind_map && 0 < func_info->max_state)
@@ -427,7 +424,7 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 				continue;
 			}
 
-			pe.add_data_rva_ref(&entry->disp_handler_array);
+			pe.record_data_ref(&entry->disp_handler_array);
 
 			const std::int64_t handler_base = entry->disp_handler_array;
 			const std::int64_t handler_total = static_cast<std::int64_t>(entry->n_catches) * static_cast<std::int64_t>(sizeof(cfh3::handler_type_t));
@@ -444,7 +441,7 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 
 				if (handler->disp_type)
 				{
-					pe.add_data_rva_ref(&handler->disp_type);
+					pe.record_data_ref(&handler->disp_type);
 				}
 				else // catches SEH if type == 0
 				{
@@ -477,7 +474,7 @@ static bool parse_cxx_funcinfo3(portable_executable_t& pe,
 			const auto* const entry = reinterpret_cast<const cfh3::ip_to_state_entry_t*>(
 				pe.data() + base + static_cast<std::int64_t>(i) * sizeof(cfh3::ip_to_state_entry_t));
 
-			pe.add_data_rva_ref(&entry->ip);
+			pe.record_data_ref(&entry->ip);
 		}
 	}
 
@@ -493,7 +490,7 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 	if (portable_executable::data_directory_t data_directory = image->nt_headers()->optional_header.data_directories.
 		exception_directory; data_directory.present())
 	{
-		context.exception_directory_rva = pe.add_rva(data_directory.virtual_address);
+		context.exception_directory_rva = rva_t(data_directory.virtual_address);
 
 		const std::uint32_t count = data_directory.size / sizeof(portable_executable::runtime_function_t);
 		auto runtime_function = reinterpret_cast<const portable_executable::runtime_function_t*>(pe.data() + data_directory.virtual_address);
@@ -505,15 +502,15 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 				continue;
 			}
 
-			pe.add_data_rva_ref(&runtime_function->begin_address);
-			pe.add_data_rva_ref(&runtime_function->end_address);
-			pe.add_data_rva_ref(&runtime_function->unwind_info_rva);
+			pe.record_data_ref(&runtime_function->begin_address);
+			pe.record_data_ref(&runtime_function->end_address);
+			pe.record_data_ref(&runtime_function->unwind_info_rva);
 
-			pe.add_to_disassembly_queue(pe.add_rva(runtime_function->begin_address));
+			pe.add_to_disassembly_queue(rva_t(runtime_function->begin_address));
 
-			if (!context.unwind_info_insertion_rva)
+			if (context.unwind_info_insertion_rva.value() == 0)
 			{
-				context.unwind_info_insertion_rva = pe.add_rva(runtime_function->unwind_info_rva);
+				context.unwind_info_insertion_rva = rva_t(runtime_function->unwind_info_rva);
 			}
 
 			const auto unwind_info = reinterpret_cast<const portable_executable::unwind_info_t*>(pe.data() + runtime_function->unwind_info_rva);
@@ -522,37 +519,37 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 
 			if (unwind_info->size_of_prolog)
 			{
-				context.fh_prologues.push_back({ .begin = pe.add_rva(runtime_function->begin_address), .prolog_size = unwind_info->size_of_prolog });
+				context.fh_prologues.push_back({ .begin = rva_t(runtime_function->begin_address), .prolog_size = unwind_info->size_of_prolog });
 			}
 
 			if (unwind_info->has_chained_function())
 			{
 				const auto chained_function = unwind_info->language_specific_data<portable_executable::runtime_function_t>();
-				pe.add_to_disassembly_queue(pe.add_rva(chained_function->begin_address));
+				pe.add_to_disassembly_queue(rva_t(chained_function->begin_address));
 
-				pe.add_data_rva_ref(&chained_function->begin_address);
-				pe.add_data_rva_ref(&chained_function->end_address);
-				pe.add_data_rva_ref(&chained_function->unwind_info_rva);
+				pe.record_data_ref(&chained_function->begin_address);
+				pe.record_data_ref(&chained_function->end_address);
+				pe.record_data_ref(&chained_function->unwind_info_rva);
 			}
 
 			if (unwind_info->has_handler())
 			{
 				const auto handler = unwind_info->language_specific_data<std::uint32_t>();
 				const auto language_data = unwind_info->language_specific_data<std::uint32_t>() + 1;
-				const auto handler_rva = pe.add_rva(*handler);
+				const auto handler_rva = rva_t(*handler);
 
-				pe.add_data_rva_ref(handler);
-				pe.create_function(*handler_rva);
+				pe.record_data_ref(handler);
+				pe.create_function(handler_rva);
 
-				context.handler_function_rvas.push_back(pe.add_rva(runtime_function->begin_address));
+				context.handler_function_rvas.push_back(rva_t(runtime_function->begin_address));
 				context.handler_function_rvas.push_back(handler_rva);
 
 				bool fh_catches_seh = false;
 
 				const auto current_function_range = [&]() -> exception_context_t::function_range_t
 					{
-						return { .begin = pe.add_rva(runtime_function->begin_address), .end =
-							pe.add_rva(runtime_function->end_address) };
+						return { .begin = rva_t(runtime_function->begin_address), .end =
+							rva_t(runtime_function->end_address) };
 					};
 
 				if (parse_c_scope_table(pe, language_data, context.seh_code_ranges,

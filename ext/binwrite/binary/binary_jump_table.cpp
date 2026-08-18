@@ -384,10 +384,8 @@ void binwrite::binary_t::add_llvm_jmp_table_ref(const rva_t table_base, const st
 			symbol_ref_map_[table_entry.value()] = symbol_ref;
 		}
 
-		const auto target_rva_ptr = std::make_shared<rva_t>(target_rva);
-
-		add_jump_table_target(dispatcher_rva, target_rva_ptr);
-		add_to_disassembly_queue(target_rva_ptr);
+		add_jump_table_target(dispatcher_rva, target_rva);
+		add_to_disassembly_queue(target_rva);
 
 		table_entry.set_value(table_entry.value() + sizeof(std::int32_t));
 	}
@@ -408,12 +406,12 @@ void binwrite::binary_t::add_msvc_jmp_table_ref(const rva_t table_base, const st
 			break;
 		}
 
-		add_data_rva_ref(entry);
+		record_data_ref(entry);
 
-		const auto target_rva = add_rva(*entry);
+		const auto target_rva = rva_t(*entry);
 		add_jump_table_target(dispatcher_rva, target_rva);
 		add_to_disassembly_queue(target_rva);
 
-		table_entry.set_value(table_entry.value() + sizeof(llvm_jmp_table_entry_t::size_type));
+		table_entry.set_value(table_entry.value() + sizeof(rva_t::value_type));
 	}
 }

@@ -157,7 +157,7 @@ static std::shared_ptr<binwrite::basic_block_t> insert_dispatcher_anchor(binwrit
 {
 	const auto original_count = entry_block->count();
 
-	entry_block->push(binary, nop_instruction().value(), true);
+	entry_block->push(binary, nop_instruction().value());
 
 	const auto anchor_block = entry_block->split_at(binary, original_count);
 

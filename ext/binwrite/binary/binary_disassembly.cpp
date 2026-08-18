@@ -13,30 +13,30 @@ static void process_basic_block_target_branch(const binwrite::binary_t& binary,
                                               const std::shared_ptr<binwrite::basic_block_t>& current_block,
                                               const binwrite::disassembled_instruction_t& last_instruction_disassembly)
 {
-	const auto last_instruction_rva = current_block->last_instruction_rva();
+	const auto original_last_instruction_rva = current_block->original_last_instruction_rva();
 
-	const auto code_rva_ref = binary.find_rva_ref(last_instruction_rva);
+	const auto code_ref = binary.find_pending_ref(original_last_instruction_rva);
 
-	if (!code_rva_ref)
+	if (!code_ref)
 	{
-		const auto jt_targets = binary.jump_table_targets(last_instruction_rva);
+		const auto jt_targets = binary.jump_table_targets(original_last_instruction_rva);
 
 		if (jt_targets.empty())
 		{
-			spdlog::error("unable to find code rva ref of conditional jump at 0x{:X}", last_instruction_rva.value());
+			spdlog::error("unable to find code rva ref of conditional jump at 0x{:X}", original_last_instruction_rva.value());
 			return;
 		}
 
 		for (const auto& jt_target : jt_targets)
 		{
-			const auto target_block = binary.find_basic_block(*jt_target);
+			const auto target_block = binary.find_basic_block(jt_target);
 
 			if (!target_block)
 			{
 				continue;
 			}
 
-			if (!binary.find_function(*jt_target) && !function->find_basic_block(*jt_target))
+			if (!binary.find_function(jt_target) && !function->find_basic_block(jt_target))
 			{
 				function->add_basic_block(target_block);
 
@@ -47,7 +47,7 @@ static void process_basic_block_target_branch(const binwrite::binary_t& binary,
 		return;
 	}
 
-	const auto target_rva = *code_rva_ref->target();
+	const binwrite::rva_t target_rva{ code_ref->target };
 
 	const auto target_basic_block = binary.find_basic_block(target_rva);
 
@@ -70,7 +70,7 @@ static void process_basic_block_fallthrough_branch(const binwrite::binary_t& bin
                                                    const std::shared_ptr<binwrite::function_t>& function,
                                                    const std::shared_ptr<binwrite::basic_block_t>& current_block)
 {
-	const auto fallthrough_rva = current_block->end_rva();
+	const auto fallthrough_rva = current_block->original_end_rva();
 
 	const auto fallthrough_basic_block = binary.find_basic_block(fallthrough_rva);
 
@@ -120,7 +120,7 @@ void binwrite::binary_t::assign_function_basic_blocks()
 
 	for (const auto& function : functions_)
 	{
-		const auto basic_block = find_basic_block(*function->rva());
+		const auto basic_block = find_basic_block(function->rva());
 
 		if (!basic_block)
 		{
@@ -148,29 +148,27 @@ void binwrite::binary_t::assign_basic_block_to_function(const std::shared_ptr<fu
 
 void binwrite::binary_t::process_instruction_rip_relativity(const disassembled_instruction_t& disassembled_instruction,
                                                             const rva_t instruction_rva, const rva_t next_instruction_rva,
-	                                                        std::vector<std::shared_ptr<rva_t>>& risky_references)
+	                                                        std::vector<rva_t>& risky_references)
 {
 	if (const auto raw_target_rva = resolve_instruction_rva(disassembled_instruction, instruction_rva))
 	{
-		const auto target_rva = add_rva(*raw_target_rva);
+		const rva_t target_rva{ *raw_target_rva };
 
-		add_rva_ref(std::make_shared<code_rva_ref_t>(target_rva, rva_t{ instruction_rva }, disassembled_instruction.size()));
+		record_code_ref(instruction_rva, target_rva, disassembled_instruction.size());
 
 		const bool is_risky_reference = disassembled_instruction.is_lea();
 
-		if (disassembled_instruction.is_control_flow() && is_in_code_section(*target_rva))
+		if (disassembled_instruction.is_control_flow() && is_in_code_section(target_rva))
 		{
 			if (disassembled_instruction.is_conditional_jump())
 			{
-				const auto fallthrough_rva = add_rva(next_instruction_rva);
-
-				add_to_disassembly_queue(fallthrough_rva);
+				add_to_disassembly_queue(next_instruction_rva);
 			}
 
 			add_to_disassembly_queue(target_rva);
 		}
-		else if (is_risky_reference && is_in_code_section(*target_rva) &&
-			(!is_data_symbol(*target_rva) || is_definitely_in_code_range(*target_rva)))
+		else if (is_risky_reference && is_in_code_section(target_rva) &&
+			(!is_data_symbol(target_rva) || is_definitely_in_code_range(target_rva)))
 		{
 			risky_references.push_back(target_rva);
 		}
@@ -181,7 +179,7 @@ bool binwrite::binary_t::collect_basic_block_instructions(const disassembler_t& 
                                                           std::vector<instruction_t>& instructions,
                                                           const rva_t block_rva, std::uint32_t& block_size,
                                                           const bool is_risky,
-                                                          std::vector<std::shared_ptr<rva_t>>& risky_references)
+                                                          std::vector<rva_t>& risky_references)
 {
 	rva_t instruction_rva = block_rva;
 
@@ -434,7 +432,7 @@ void binwrite::binary_t::erase_symbol(std::shared_ptr<symbol_t> symbol)
 	{
 		std::erase(basic_blocks_, bb);
 
-		if (const auto rva = bb->rva())
+		if (const auto rva = bb->original_rva())
 		{
 			bb_index_.erase(rva->value());
 			bb_interval_index_.erase(rva->value());
@@ -465,11 +463,11 @@ void binwrite::binary_t::process_disassembly_queue()
 		disassembly_queue_.pop_front();
 
 		std::vector<instruction_t> instructions = { };
-		std::vector<std::shared_ptr<rva_t>> risky_references = { };
+		std::vector<rva_t> risky_references = { };
 
 		std::uint32_t block_size = 0;
 
-		if (!collect_basic_block_instructions(disassembler, instructions, *entry.rva, block_size, entry.risky, risky_references) ||
+		if (!collect_basic_block_instructions(disassembler, instructions, entry.rva, block_size, entry.risky, risky_references) ||
 			instructions.empty())
 		{
 			continue;
@@ -477,7 +475,7 @@ void binwrite::binary_t::process_disassembly_queue()
 
 		std::shared_ptr<symbol_t> placeholder;
 
-		if (const auto it = disassembly_symbol_map_.find(entry.rva->value()); it != disassembly_symbol_map_.end())
+		if (const auto it = disassembly_symbol_map_.find(entry.rva.value()); it != disassembly_symbol_map_.end())
 		{
 			if (const auto db = std::dynamic_pointer_cast<data_block_t>(it->second))
 			{
@@ -487,9 +485,9 @@ void binwrite::binary_t::process_disassembly_queue()
 			}
 		}
 
-		const auto section = find_section(*entry.rva);
+		const auto section = find_section(entry.rva);
 
-		auto basic_block = create_basic_block(*section, instructions, *entry.rva);
+		auto basic_block = create_basic_block(*section, instructions, entry.rva);
 
 		if (placeholder)
 		{
@@ -501,7 +499,7 @@ void binwrite::binary_t::process_disassembly_queue()
 		for (const auto& risky_rva : risky_references)
 		{
 			// a reference site, such as a jump table entry, holds data and must not be disassembled
-			if (find_rva_ref(*risky_rva) || find_symbol_ref<symbol_ref_t>(*risky_rva))
+			if (find_pending_ref(risky_rva) || find_symbol_ref<symbol_ref_t>(risky_rva))
 			{
 				continue;
 			}
@@ -551,21 +549,20 @@ void binwrite::binary_t::process_disassembly_queue()
 
 void binwrite::binary_t::split_basic_blocks_in_data()
 {
-	for (const auto& rva_ref : rva_refs_)
+	for (const auto& ref : pending_refs_)
 	{
-		const auto overlapping_block = find_containing_basic_block(rva_ref->self());
+		const rva_t self_rva{ ref.self };
+
+		const auto overlapping_block = find_containing_basic_block(self_rva);
 
 		if (!overlapping_block)
 		{
 			continue;
 		}
 
-		const auto jump_table_entry = std::dynamic_pointer_cast<llvm_jmp_table_entry_t>(rva_ref);
-		const auto data_ref = std::dynamic_pointer_cast<data_rva_ref_t>(rva_ref);
-
-		if (jump_table_entry || data_ref)
+		if (ref.kind == pending_ref_kind_t::data)
 		{
-			const auto index = overlapping_block->instruction_index(rva_ref->self());
+			const auto index = overlapping_block->instruction_index(self_rva);
 
 			const auto split_block = split_basic_block(*overlapping_block, index);
 
@@ -580,30 +577,25 @@ void binwrite::binary_t::populate_data_symbol_refs()
 	{
 		rva_t self_rva;
 		rva_t::value_type target_rva_value;
-		data_rva_ref_t::size_type encoding_size;
+		std::uint32_t encoding_size;
 		std::uint32_t target_alignment;
 	};
 
 	std::vector<convertible_ref_t> candidates;
 
-	for (const auto& ref : rva_refs_)
+	for (const auto& ref : pending_refs_)
 	{
-		if (typeid(*ref) != typeid(data_rva_ref_t))
+		if (ref.kind != pending_ref_kind_t::data)
 		{
 			continue;
 		}
 
-		const auto& data_ref = static_cast<const data_rva_ref_t&>(*ref);
-
-		const rva_t self_rva = data_ref.self();
-		const rva_t::value_type target_value = data_ref.target()->value();
-
-		if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+		if (ref.target == 0 || !is_rva_valid(rva_t{ ref.target }))
 		{
 			continue;
 		}
 
-		candidates.push_back({ self_rva, target_value, data_ref.encoding_size(), data_ref.target_alignment() });
+		candidates.push_back({ rva_t{ ref.self }, ref.target, ref.size, ref.target_alignment });
 	}
 
 	std::ranges::sort(candidates, [](const auto& a, const auto& b)
@@ -650,29 +642,24 @@ void binwrite::binary_t::populate_code_symbol_refs()
 	{
 		rva_t self_rva;
 		rva_t::value_type target_rva_value;
-		code_rva_ref_t::size_type instruction_size;
+		std::uint32_t instruction_size;
 	};
 
 	std::vector<convertible_ref_t> candidates;
 
-	for (const auto& ref : rva_refs_)
+	for (const auto& ref : pending_refs_)
 	{
-		if (typeid(*ref) != typeid(code_rva_ref_t))
+		if (ref.kind != pending_ref_kind_t::code)
 		{
 			continue;
 		}
 
-		const auto& code_ref = static_cast<const code_rva_ref_t&>(*ref);
-
-		const rva_t self_rva = code_ref.self();
-		const rva_t::value_type target_value = code_ref.target()->value();
-
-		if (!is_rva_valid(rva_t{ target_value }))
+		if (!is_rva_valid(rva_t{ ref.target }))
 		{
 			continue;
 		}
 
-		candidates.push_back({ self_rva, target_value, code_ref.instruction_size() });
+		candidates.push_back({ rva_t{ ref.self }, ref.target, ref.size });
 	}
 
 	std::ranges::sort(candidates, [](const auto& a, const auto& b)
@@ -686,12 +673,12 @@ void binwrite::binary_t::populate_code_symbol_refs()
 
 		const auto self_block = find_containing_basic_block(candidate.self_rva);
 
-		if (!self_block || !self_block->rva())
+		if (!self_block || !self_block->original_rva())
 		{
 			continue;
 		}
 
-		const auto self_offset = candidate.self_rva.value() - self_block->rva()->value();
+		const auto self_offset = candidate.self_rva.value() - self_block->original_rva()->value();
 		const auto self_instr_id = self_block->instruction_id_at_byte_offset(static_cast<std::uint32_t>(self_offset));
 
 		if (!self_instr_id)
@@ -701,7 +688,7 @@ void binwrite::binary_t::populate_code_symbol_refs()
 
 		std::shared_ptr<symbol_t> target_symbol;
 
-		if (const auto target_block = find_containing_basic_block(target_rva); target_block && target_block->rva())
+		if (const auto target_block = find_containing_basic_block(target_rva); target_block && target_block->original_rva())
 		{
 			target_symbol = target_block;
 		}
@@ -744,22 +731,19 @@ void binwrite::binary_t::populate_dir64_reloc_symbol_refs()
 
 	std::vector<candidate_t> candidates;
 
-	for (const auto& ref : rva_refs_)
+	for (const auto& ref : pending_refs_)
 	{
-		if (typeid(*ref) != typeid(pe_dir64_reloc_t))
+		if (ref.kind != pending_ref_kind_t::dir64_reloc)
 		{
 			continue;
 		}
 
-		const rva_t self_rva = ref->self();
-		const rva_t::value_type target_value = ref->target()->value();
-
-		if (target_value == 0 || !is_rva_valid(rva_t{ target_value }))
+		if (ref.target == 0 || !is_rva_valid(rva_t{ ref.target }))
 		{
 			continue;
 		}
 
-		candidates.push_back({ self_rva, target_value });
+		candidates.push_back({ rva_t{ ref.self }, ref.target });
 	}
 
 	std::ranges::sort(candidates, [](const auto& a, const auto& b)
@@ -806,19 +790,14 @@ void binwrite::binary_t::populate_fh4_encoded_symbol_refs()
 
 	std::vector<candidate_t> candidates;
 
-	for (const auto& ref : rva_refs_)
+	for (const auto& ref : pending_refs_)
 	{
-		if (typeid(*ref) != typeid(pe_fh4_encoded_entry_t))
+		if (ref.kind != pending_ref_kind_t::fh4_encoded)
 		{
 			continue;
 		}
 
-		const auto& entry = static_cast<const pe_fh4_encoded_entry_t&>(*ref);
-
-		const rva_t self_rva = entry.self();
-		const rva_t::value_type target_value = entry.target()->value();
-
-		candidates.push_back({ self_rva, target_value, entry.previous_entry_target()->value(), entry.encoded_size() });
+		candidates.push_back({ rva_t{ ref.self }, ref.target, ref.previous_target, ref.size });
 	}
 
 	std::ranges::sort(candidates, [](const auto& a, const auto& b)
@@ -924,21 +903,16 @@ void binwrite::binary_t::disassemble()
 	assign_function_basic_blocks();
 }
 
-bool binwrite::binary_t::is_inside_disassembly_queue(const rva_t rva) const
+void binwrite::binary_t::add_to_disassembly_queue(const rva_t rva, const bool risky)
 {
-	return disassembly_queue_set_.contains(rva.value());
-}
-
-void binwrite::binary_t::add_to_disassembly_queue(const std::shared_ptr<rva_t>& rva, const bool risky)
-{
-	if (!is_in_code_section(*rva))
+	if (!is_in_code_section(rva))
 	{
 		return;
 	}
 
-	if (!disassembly_queue_set_.contains(rva->value()) && !find_basic_block(*rva))
+	if (!disassembly_queue_set_.contains(rva.value()) && !find_basic_block(rva))
 	{
 		disassembly_queue_.emplace_back(rva, risky);
-		disassembly_queue_set_.insert(rva->value());
+		disassembly_queue_set_.insert(rva.value());
 	}
 }

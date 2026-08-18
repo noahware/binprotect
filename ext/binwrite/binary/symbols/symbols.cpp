@@ -138,7 +138,7 @@ bool binwrite::code_symbol_ref_t::widen_encoding(binary_t&)
 
 	if (!widened)
 	{
-		const auto rva = block->rva();
+		const auto rva = block->original_rva();
 
 		spdlog::error("failed to widen instruction at rva 0x{:X} size={}",
 			rva ? rva->value() : 0, instruction.size());

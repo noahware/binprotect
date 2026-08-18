@@ -61,8 +61,8 @@ namespace binwrite
 	protected:
 		struct runtime_function_t
 		{
-			std::shared_ptr<rva_t> begin;
-			std::shared_ptr<rva_t> end;
+			rva_t begin;
+			rva_t end;
 		};
 
 		std::vector<runtime_function_t> runtime_functions_;
@@ -74,7 +74,6 @@ namespace binwrite
 		void update_relocations() override;
 		bool is_definitely_in_code_range(rva_t rva) const override;
 
-		rva_t::value_type process_section_alignment(const std::shared_ptr<section_t>& info, std::uint32_t section_alignment);
 
 		void copy_sections(std::vector<std::uint8_t>& to, bool decompress);
 
@@ -94,20 +93,6 @@ namespace binwrite
 		void add_relocation_rvas(const portable_executable::nt_headers_t* nt_headers);
 		void add_unwind_info_rvas(const portable_executable::unwind_info_t* unwind_info);
 		void add_exception_rvas(const portable_executable::nt_headers_t* nt_headers);
-
-		template <class T>
-		std::shared_ptr<data_rva_ref_t> add_relocation_ref(const T* const value)
-		{
-			const auto data_reference = static_cast<rva_t::value_type>(reinterpret_cast<const std::uint8_t*>(value) - data());
-			const auto data_rva = add_rva(static_cast<rva_t::value_type>(*value));
-
-			const auto ref = std::make_shared<data_rva_ref_t>(data_rva, rva_t{ data_reference }, static_cast<data_rva_ref_t::size_type>(sizeof(T)));
-
-			add_rva_ref(ref);
-
-			return ref;
-		}
-
 		void find_data_rvas() override;
 		void finalize_before_recompile() override;
 	};

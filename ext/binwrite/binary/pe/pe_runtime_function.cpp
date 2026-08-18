@@ -144,6 +144,12 @@ void binwrite::portable_executable_t::add_runtime_function(const runtime_functio
 	std::memcpy(table_size_field, &table_size, sizeof(table_size));
 }
 
+// note: currently never gets past the lookup below. main.cpp calls clear_symbol_rvas() before
+// recompile(), and find_data_symbol_ref_at matches on symbol rvas, so table_start is always null
+// here and the function returns immediately. running it after recompile()'s first layout pass does
+// find the table, but then the field walk below collects whole data blocks rather than 4 byte
+// fields (it only holds once add_runtime_function has split them), overshooting table_size. sorting
+// the runtime function table therefore needs that walk fixed, not just a reordered call
 void binwrite::portable_executable_t::finalize_exception_directory()
 {
 	const auto& directory = image()->nt_headers()->optional_header.data_directories.exception_directory;

@@ -62,49 +62,6 @@ void binwrite::portable_executable_t::copy_sections(std::vector<std::uint8_t>& t
 	std::memcpy(to.data(), buffer_.data(), size_of_headers);
 }
 
-binwrite::rva_t::value_type binwrite::portable_executable_t::process_section_alignment(
-	const std::shared_ptr<section_t>& info, const std::uint32_t section_alignment)
-{
-	const rva_t::value_type unaligned_section_end = info->end_rva().value();
-	const rva_t::value_type aligned_section_end = portable_executable::image_t::calculate_alignment(unaligned_section_end, section_alignment);
-
-	const rva_t::value_type excess = unaligned_section_end % section_alignment;
-
-	if (!excess)
-	{
-		return aligned_section_end;
-	}
-
-	const rva_t padding_rva(unaligned_section_end - info->padding());
-
-	if (excess <= info->padding())
-	{
-		const auto excess_begin = buffer_.begin() + padding_rva.value();
-
-		buffer_.erase(excess_begin, excess_begin + static_cast<rva_t::size_type>(excess));
-
-		update_rvas(padding_rva, -static_cast<std::int32_t>(excess), true, false);
-
-		info->remove_padding(excess);
-
-		return unaligned_section_end - excess;
-	}
-
-	const auto padding_size = static_cast<std::int32_t>(aligned_section_end - unaligned_section_end);
-
-	const std::uint8_t padding_value = info->code() ? 0xCC : 0x00;
-
-	const auto it = buffer_.begin() + padding_rva.value();
-
-	buffer_.insert(it, padding_size, padding_value);
-
-	update_rvas(padding_rva, padding_size, true, false);
-
-	info->add_padding(padding_size);
-
-	return aligned_section_end;
-}
-
 void binwrite::portable_executable_t::update_section_headers()
 {
 	const std::uint32_t size_of_headers = image()->nt_headers()->optional_header.size_of_headers;

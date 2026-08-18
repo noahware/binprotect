@@ -2,159 +2,61 @@
 
 #include <spdlog/spdlog.h>
 
-void binwrite::binary_t::update_rva_references()
+std::optional<binwrite::pending_ref_t> binwrite::binary_t::find_pending_ref(const rva_t self_rva) const
 {
-	for (const auto& rva_ref : rva_refs_)
+	const auto it = pending_ref_index_.find(self_rva.value());
+
+	if (it == pending_ref_index_.end())
 	{
-		rva_ref->update_reference(*this);
+		return std::nullopt;
 	}
 
-	update_section_headers();
-
-	for (std::uint64_t i = 0; i < rva_refs_.size();)
-	{
-		const auto& rva_ref = rva_refs_[i];
-
-		const auto result = rva_ref->update_reference(*this);
-
-		if (!result)
-		{
-			if (result.error() == rva_ref_t::error_t::instruction_length_changed)
-			{
-				update_section_headers();
-
-				i = 0;
-
-				continue;
-			}
-
-			spdlog::error("unable to update rva reference at 0x{:X} (target=0x{:X}, is_code={}, error={})",
-				rva_ref->self().value(), rva_ref->target()->value(),
-				rva_ref->is_code_reference(), static_cast<int>(result.error()));
-		}
-
-		i++;
-	}
-
-	update_relocations();
-
-	update_section_headers();
+	return pending_refs_[it->second];
 }
 
-void binwrite::binary_t::update_section_rvas(const rva_t disruption_rva, const rva_t::size_type disruption_size)
+void binwrite::binary_t::record_pending_ref(const pending_ref_t& ref)
 {
-	for (const auto& [name, section] : sections_)
-	{
-		section->process_disruption(disruption_rva, disruption_size);
-	}
+	// the index keeps the first record at a location, matching the old first-match lookup
+	pending_ref_index_.emplace(ref.self, pending_refs_.size());
+
+	pending_refs_.push_back(ref);
 }
 
-void binwrite::binary_t::update_rvas(const rva_t disruption_rva, const rva_t::size_type disruption_size,
-                                     const bool inclusive, const bool update_sections)
+void binwrite::binary_t::record_code_ref(const rva_t self, const rva_t target, const std::uint32_t instruction_size)
 {
-	if (update_sections)
-	{
-		update_section_rvas(disruption_rva, disruption_size);
-	}
-
-	rvas_index_.clear();
-
-	for (const auto& rva : rvas_)
-	{
-		rva->process_disruption(disruption_rva, disruption_size, inclusive);
-
-		const std::uint64_t key = (static_cast<std::uint64_t>(rva->value()) << 1) | (rva->force_inclusive() ? 1ULL : 0ULL);
-		rvas_index_[key] = rva;
-	}
-
-	for (const auto& rva_ref : rva_refs_)
-	{
-		rva_ref->process_disruption(disruption_rva, disruption_size);
-	}
-
-	bb_index_dirty_ = true;
-	fn_index_dirty_ = true;
-
-	for (const auto& function : functions_)
-	{
-		function->set_basic_blocks_dirty(true);
-	}
+	record_pending_ref({
+		.self = self.value(),
+		.target = target.value(),
+		.previous_target = 0,
+		.size = instruction_size,
+		.target_alignment = 1,
+		.kind = pending_ref_kind_t::code
+	});
 }
 
-std::shared_ptr<binwrite::rva_ref_t> binwrite::binary_t::find_rva_ref(const rva_t ref_rva,
-                                                                      const bool must_be_code_reference) const
+void binwrite::binary_t::record_dir64_ref(const rva_t self, const rva_t target)
 {
-	for (const auto& rva_ref : rva_refs_)
-	{
-		const auto& ref = rva_ref;
-
-		if (must_be_code_reference && !ref->is_code_reference())
-		{
-			continue;
-		}
-
-		if (ref->self() == ref_rva)
-		{
-			return rva_ref;
-		}
-	}
-
-	return { };
+	record_pending_ref({
+		.self = self.value(),
+		.target = target.value(),
+		.previous_target = 0,
+		.size = sizeof(std::uint64_t),
+		.target_alignment = 1,
+		.kind = pending_ref_kind_t::dir64_reloc
+	});
 }
 
-std::vector<std::shared_ptr<binwrite::rva_ref_t>> binwrite::binary_t::find_all_targetted_rva_refs(const rva_t target_rva) const
+void binwrite::binary_t::record_fh4_ref(const rva_t self, const rva_t target, const rva_t previous_target,
+                                        const std::uint32_t encoded_size)
 {
-	std::vector<std::shared_ptr<rva_ref_t>> refs;
-
-	for (const auto& rva_ref : rva_refs_)
-	{
-		if (*rva_ref->target() == target_rva)
-		{
-			refs.push_back(rva_ref);
-		}
-	}
-
-	return refs;
-}
-
-std::shared_ptr<binwrite::rva_t> binwrite::binary_t::add_rva(const rva_t::value_type value, const bool force_inclusive)
-{
-	const std::uint64_t key = (static_cast<std::uint64_t>(value) << 1) | (force_inclusive ? 1ULL : 0ULL);
-
-	if (const auto it = rvas_index_.find(key); it != rvas_index_.end())
-	{
-		if (auto existing = it->second.lock();
-			existing && existing->value() == value && existing->force_inclusive() == force_inclusive)
-		{
-			return existing;
-		}
-	}
-
-	for (const auto& existing_rva : rvas_)
-	{
-		if (existing_rva->value() == value &&
-			existing_rva->force_inclusive() == force_inclusive)
-		{
-			rvas_index_[key] = existing_rva;
-			return existing_rva;
-		}
-	}
-
-	const auto rva = std::make_shared<rva_t>(value, force_inclusive);
-	rvas_.push_back(rva);
-	rvas_index_[key] = rva;
-
-	return rva;
-}
-
-std::shared_ptr<binwrite::rva_t> binwrite::binary_t::add_rva(const rva_t rva, const bool force_inclusive)
-{
-	return add_rva(rva.value(), force_inclusive);
-}
-
-void binwrite::binary_t::add_rva_ref(std::shared_ptr<rva_ref_t> ref)
-{
-	rva_refs_.push_back(std::move(ref));
+	record_pending_ref({
+		.self = self.value(),
+		.target = target.value(),
+		.previous_target = previous_target.value(),
+		.size = encoded_size,
+		.target_alignment = 1,
+		.kind = pending_ref_kind_t::fh4_encoded
+	});
 }
 
 void binwrite::binary_t::add_symbol_ref(std::shared_ptr<symbol_ref_t> ref)
@@ -183,27 +85,4 @@ bool binwrite::binary_t::is_rva_valid(const rva_t rva) const
 bool binwrite::binary_t::is_rva_valid(const rva_t::value_type rva) const
 {
 	return is_rva_valid(rva_t{ rva });
-}
-
-void binwrite::binary_t::redirect_rva_ref(const rva_t self, const rva_t new_target)
-{
-	const auto added_rva = add_rva(new_target);
-
-	for (const auto& rva_ref : rva_refs_)
-	{
-		if (rva_ref->self() == self)
-		{
-			rva_ref->set_target(added_rva);
-		}
-	}
-}
-
-std::shared_ptr<binwrite::rva_t> binwrite::binary_t::add_relocation_rva(const rva_t::value_type target)
-{
-	return add_rva(target, true);
-}
-
-std::shared_ptr<binwrite::rva_t> binwrite::binary_t::add_relocation_rva(const rva_t target)
-{
-	return add_relocation_rva(target.value());
 }

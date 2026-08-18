@@ -24,15 +24,23 @@ namespace binwrite
 			recompute_size();
 		}
 
-		[[nodiscard]] std::shared_ptr<rva_t> rva() const
+		// the address this block was disassembled from. it is never updated, so once a pass has
+		// changed any instruction size it no longer corresponds to anything in the buffer. it stays
+		// meaningful only as the identity every index and exception range is keyed on. for a live
+		// address use symbol_t::rva(), which recompile() assigns
+		[[nodiscard]] std::optional<rva_t> original_rva() const
 		{
-			return rva_;
+			return original_rva_;
 		}
 
-		void set_block_rva(std::shared_ptr<rva_t> rva)
+		void set_original_rva(std::optional<rva_t> rva)
 		{
-			rva_ = std::move(rva);
+			original_rva_ = std::move(rva);
 		}
+
+		// hides symbol_t::rva()/end_rva() so that a call on a basic block has to say which it means
+		std::optional<rva_t> rva() const = delete;
+		std::optional<rva_t> end_rva() const = delete;
 
 		[[nodiscard]] bool should_skip() const
 		{
@@ -44,24 +52,21 @@ namespace binwrite
 			skip_ = state;
 		}
 
-		void clear_disassembly();
 
-		[[nodiscard]] rva_t end_rva() const;
-		[[nodiscard]] rva_t instruction_rva(size_type index) const;
+		[[nodiscard]] rva_t original_end_rva() const;
+		[[nodiscard]] rva_t original_instruction_rva(size_type index) const;
 		[[nodiscard]] size_type instruction_index(rva_t target_rva) const;
 
-		void move_entire(binary_t& binary, rva_t destination) const;
 
-		instruction_t& push(binary_t& binary, const instruction_t& instruction, bool pre_existing = false, bool inclusive = false);
-		void push(binary_t& binary, std::span<const instruction_t> instructions, bool pre_existing = false, bool inclusive = false);
+		instruction_t& push(binary_t& binary, const instruction_t& instruction);
+		void push(binary_t& binary, std::span<const instruction_t> instructions);
 
-		instruction_t& insert(binary_t& binary, const instruction_t& instruction, size_type index, bool inclusive = false);
-		void insert(binary_t& binary, std::span<const instruction_t> instructions, size_type index, bool inclusive = false);
+		instruction_t& insert(binary_t& binary, const instruction_t& instruction, size_type index);
+		void insert(binary_t& binary, std::span<const instruction_t> instructions, size_type index);
 
-		void erase(binary_t& binary, size_type index, size_type count, bool affects_buffer = true);
-		void erase(binary_t& binary, size_type index, bool affects_buffer = true);
+		void erase(binary_t& binary, size_type index, size_type count);
+		void erase(binary_t& binary, size_type index);
 
-		void clear(binary_t& binary);
 
 		[[nodiscard]] instruction_t& last_instruction()
 		{
@@ -73,9 +78,9 @@ namespace binwrite
 			return instructions_.at(count() - 1);
 		}
 
-		[[nodiscard]] rva_t last_instruction_rva() const
+		[[nodiscard]] rva_t original_last_instruction_rva() const
 		{
-			return instruction_rva(count() - 1);
+			return original_instruction_rva(count() - 1);
 		}
 
 		[[nodiscard]] instruction_t& at(const size_type index)
@@ -105,12 +110,14 @@ namespace binwrite
 
 		[[nodiscard]] bool contains(const rva_t rva) const
 		{
-			return *rva_ <= rva && rva < end_rva();
+			return *original_rva_ <= rva && rva < original_end_rva();
 		}
 
+		// identity, not address: blocks created by a pass have no rva, and comparing those by
+		// value would make every one of them equal to every other
 		bool operator==(const basic_block_t& other) const
 		{
-			return rva_ == other.rva_;
+			return this == &other;
 		}
 
 		[[nodiscard]] size_type size() const override
@@ -188,7 +195,7 @@ namespace binwrite
 
 		size_type index_from_byte_offset(size_type byte_offset) const;
 
-		std::shared_ptr<rva_t> rva_;
+		std::optional<rva_t> original_rva_;
 		std::vector<instruction_t> instructions_;
 		rva_t::value_type total_size_ = 0;
 

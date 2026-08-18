@@ -4,14 +4,6 @@
 
 #include "../binary/binary.hpp"
 
-void binwrite::basic_block_t::clear_disassembly()
-{
-	for (auto& instruction : instructions_)
-	{
-		instruction.clear_disassembly();
-	}
-}
-
 void binwrite::basic_block_t::recompute_size()
 {
 	total_size_ = 0;
@@ -22,21 +14,21 @@ void binwrite::basic_block_t::recompute_size()
 	}
 }
 
-binwrite::rva_t binwrite::basic_block_t::end_rva() const
+binwrite::rva_t binwrite::basic_block_t::original_end_rva() const
 {
-	return rva_t{ rva_->value() + total_size_ };
+	return rva_t{ original_rva_->value() + total_size_ };
 }
 
-[[nodiscard]] binwrite::rva_t binwrite::basic_block_t::instruction_rva(const size_type index) const
+[[nodiscard]] binwrite::rva_t binwrite::basic_block_t::original_instruction_rva(const size_type index) const
 {
 	if (index <= 0)
 	{
-		return *rva_;
+		return *original_rva_;
 	}
 
 	if (index >= count())
 	{
-		return end_rva();
+		return original_end_rva();
 	}
 
 	rva_t::value_type offset = 0;
@@ -46,7 +38,7 @@ binwrite::rva_t binwrite::basic_block_t::end_rva() const
 		offset += instructions_[i].size();
 	}
 
-	return rva_t{ rva_->value() + offset };
+	return rva_t{ original_rva_->value() + offset };
 }
 
 binwrite::symbol_t::size_type binwrite::basic_block_t::index_from_byte_offset(const size_type byte_offset) const
@@ -68,78 +60,9 @@ binwrite::symbol_t::size_type binwrite::basic_block_t::index_from_byte_offset(co
 
 binwrite::basic_block_t::size_type binwrite::basic_block_t::instruction_index(const rva_t target_rva) const
 {
-	const auto target_offset = target_rva.value() - rva_->value();
+	const auto target_offset = target_rva.value() - original_rva_->value();
 
 	return index_from_byte_offset(target_offset);
-}
-
-void binwrite::basic_block_t::move_entire(binary_t& binary, rva_t destination) const
-{
-	const rva_t original_block_rva = *rva_;
-
-	if (original_block_rva == destination)
-	{
-		return;
-	}
-
-	const rva_t::size_type block_size = static_cast<std::int32_t>(end_rva().value() - original_block_rva.value());
-
-	std::vector<std::pair<std::shared_ptr<rva_ref_t>, rva_t::value_type>> references_in_block = { };
-
-	for (const auto& rva_ref : binary.rva_refs())
-	{
-		if (contains(rva_ref->self()))
-		{
-			const auto offset = rva_ref->self().value() - original_block_rva.value();
-
-			references_in_block.emplace_back(rva_ref, offset);
-		}
-	}
-
-	std::vector<std::pair<std::shared_ptr<rva_t>, rva_t::value_type>> rvas_pointing_to_block = { };
-
-	for (const auto& rva : binary.rvas())
-	{
-		if (contains(*rva))
-		{
-			const auto offset = rva->value() - original_block_rva.value();
-
-			rvas_pointing_to_block.emplace_back(rva, offset);
-		}
-	}
-
-	const auto block_start = binary.data() + rva_->value();
-
-	std::vector block_data(block_start, block_start + block_size);
-
-	binary.insert(destination, block_data, true);
-
-	if (destination < original_block_rva)
-	{
-		binary.erase(rva_t{ original_block_rva.value() + block_size }, block_size, true);
-	}
-	else
-	{
-		binary.erase(original_block_rva, block_size, true);
-
-		destination = rva_t{ destination.value() - block_size };
-	}
-
-	for (const auto& [reference, value] : references_in_block)
-	{
-		rva_t self = reference->self();
-
-		self.set_value(destination.value() + value);
-
-		reference->set_self(self);
-	}
-
-	for (const auto& [rva_finger, value] : rvas_pointing_to_block)
-	{
-		rva_finger->set_value(destination.value() + value);
-	}
-
-	*rva_ = destination;
 }
 
 std::vector<std::uint8_t> group_instruction_bytes(const std::span<const binwrite::instruction_t> instructions)
@@ -156,23 +79,15 @@ std::vector<std::uint8_t> group_instruction_bytes(const std::span<const binwrite
 	return bytes;
 }
 
-binwrite::instruction_t& binwrite::basic_block_t::push(binary_t& binary, const instruction_t& instruction, const bool pre_existing, const bool inclusive)
+binwrite::instruction_t& binwrite::basic_block_t::push(binary_t& binary, const instruction_t& instruction)
 {
-	push(binary, std::array{ instruction }, pre_existing, inclusive);
+	push(binary, std::array{ instruction });
 
 	return instructions_.back();
 }
 
-void binwrite::basic_block_t::push(binary_t& binary, const std::span<const instruction_t> instructions, const bool pre_existing, const bool inclusive)
+void binwrite::basic_block_t::push(binary_t& binary, const std::span<const instruction_t> instructions)
 {
-	if (!pre_existing && rva_)
-	{
-		const rva_t rva = end_rva();
-		const auto bytes = group_instruction_bytes(instructions);
-
-		binary.insert(rva, bytes, inclusive);
-	}
-
 	const auto first_added = instructions_.size();
 
 	instructions_.insert(instructions_.end(), instructions.begin(), instructions.end());
@@ -185,14 +100,14 @@ void binwrite::basic_block_t::push(binary_t& binary, const std::span<const instr
 	recompute_size();
 }
 
-binwrite::instruction_t& binwrite::basic_block_t::insert(binary_t& binary, const instruction_t& instruction, const size_type index, const bool inclusive)
+binwrite::instruction_t& binwrite::basic_block_t::insert(binary_t& binary, const instruction_t& instruction, const size_type index)
 {
-	insert(binary, std::array{ instruction }, index, inclusive);
+	insert(binary, std::array{ instruction }, index);
 
 	return instructions_[index];
 }
 
-void binwrite::basic_block_t::insert(binary_t& binary, const std::span<const instruction_t> instructions, const size_type index, const bool inclusive)
+void binwrite::basic_block_t::insert(binary_t& binary, const std::span<const instruction_t> instructions, const size_type index)
 {
 	const auto begin = instructions_.begin() + index;
 	const auto inserted_count = static_cast<size_type>(instructions.size());
@@ -207,7 +122,7 @@ void binwrite::basic_block_t::insert(binary_t& binary, const std::span<const ins
 	recompute_size();
 }
 
-void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, const size_type count, const bool affects_buffer)
+void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, const size_type count)
 {
 	const auto first_instruction = instructions_.begin() + index;
 
@@ -216,14 +131,9 @@ void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, con
 	recompute_size();
 }
 
-void binwrite::basic_block_t::erase(binary_t& binary, const size_type index, const bool affects_buffer)
+void binwrite::basic_block_t::erase(binary_t& binary, const size_type index)
 {
-	return erase(binary, index, 1, affects_buffer);
-}
-
-void binwrite::basic_block_t::clear(binary_t& binary)
-{
-	erase(binary, 0, count(), true);
+	return erase(binary, index, 1);
 }
 
 std::shared_ptr<binwrite::basic_block_t> binwrite::basic_block_t::split_at(binary_t& binary, const size_type index)
@@ -235,9 +145,9 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::basic_block_t::split_at(binar
 
 	std::optional<rva_t> split_rva;
 
-	if (rva_)
+	if (original_rva_)
 	{
-		split_rva = instruction_rva(index);
+		split_rva = original_instruction_rva(index);
 	}
 
 	const auto begin = instructions_.begin() + index;

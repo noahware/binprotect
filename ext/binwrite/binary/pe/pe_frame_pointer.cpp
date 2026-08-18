@@ -27,14 +27,6 @@ namespace binwrite
 		const portable_executable::runtime_function_t* runtime_function,
 		const binary_t& binary);
 
-	void reassemble_displacement_instruction(
-		portable_executable_t& pe,
-		const std::shared_ptr<basic_block_t>& basic_block,
-		std::uint32_t instruction_index,
-		instruction_t& instruction,
-		const instruction_t& compiled_instruction,
-		block_insertion_list_t& block_instructions);
-
 	void adjust_displacements_in_block(
 		portable_executable_t& pe,
 		const std::shared_ptr<basic_block_t>& basic_block,
@@ -71,7 +63,7 @@ namespace binwrite
 	void apply_deferred_insertions(
 		portable_executable_t& pe,
 		std::vector<std::pair<std::shared_ptr<symbol_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
-		const std::vector<std::pair<std::shared_ptr<rva_t>, std::vector<std::uint8_t>>>& unwind_code_insertions,
+		const std::vector<std::pair<rva_t, std::vector<std::uint8_t>>>& unwind_code_insertions,
 		const block_insertion_list_t& block_instructions);
 }
 
@@ -124,7 +116,7 @@ static bool has_unwind_register_conflict(
 static portable_executable::unwind_info_t* find_shared_unwind_refs(binwrite::portable_executable_t& pe,
                                                                    const portable_executable::runtime_function_t*
                                                                    runtime_function,
-                                                                   const std::shared_ptr<binwrite::rva_t>& directory_rva,
+                                                                   const binwrite::rva_t directory_rva,
                                                                    const std::uint32_t count,
                                                                    std::vector<std::uint8_t>& buffer,
                                                                    binwrite::exception_context_t& context,
@@ -134,11 +126,11 @@ static portable_executable::unwind_info_t* find_shared_unwind_refs(binwrite::por
 		buffer.data() + runtime_function->unwind_info_rva);
 
 	auto updated_runtime_function = reinterpret_cast<const portable_executable::runtime_function_t*>(
-		pe.data() + directory_rva->value());
+		pe.data() + directory_rva.value());
 
-	if (!context.unwind_info_insertion_rva)
+	if (context.unwind_info_insertion_rva.value() == 0)
 	{
-		context.unwind_info_insertion_rva = pe.add_rva(runtime_function->unwind_info_rva);
+		context.unwind_info_insertion_rva = binwrite::rva_t(runtime_function->unwind_info_rva);
 	}
 
 	const auto start = reinterpret_cast<const std::uint8_t*>(original_unwind_info);
@@ -152,7 +144,7 @@ static portable_executable::unwind_info_t* find_shared_unwind_refs(binwrite::por
 		const auto* const handler_ptr = original_unwind_info->language_specific_data<const std::uint8_t>();
 
 		auto ref_rt = reinterpret_cast<const portable_executable::runtime_function_t*>(
-			pe.data() + directory_rva->value());
+			pe.data() + directory_rva.value());
 
 		const std::uint8_t* block_end = handler_ptr + 4;
 
@@ -323,10 +315,10 @@ static void apply_frame_pointer_unwind_info(binwrite::portable_executable_t& pe,
 	const portable_executable::unwind_register_t unwind_register,
 	const binwrite::instruction_t::size_type added_size,
 	std::vector<std::uint8_t>& copied_unwind_info,
-	const std::shared_ptr<binwrite::rva_t>& directory_rva,
+	const binwrite::rva_t directory_rva,
 	const std::uint32_t count,
 	const portable_executable::runtime_function_t* runtime_function,
-	std::vector<std::pair<std::shared_ptr<binwrite::rva_t>, std::vector<std::uint8_t>>>& unwind_code_insertions,
+	std::vector<std::pair<binwrite::rva_t, std::vector<std::uint8_t>>>& unwind_code_insertions,
 	std::vector<std::pair<std::shared_ptr<binwrite::symbol_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions)
 {
 	std::uint8_t& unwind_code_count = unwind_info->unwind_code_count;
@@ -353,7 +345,7 @@ static void apply_frame_pointer_unwind_info(binwrite::portable_executable_t& pe,
 	end_bytes.insert(end_bytes.end(), push_first_bytes.begin(), push_first_bytes.end());
 
 	auto updated_runtime_function = reinterpret_cast<const portable_executable::runtime_function_t*>(
-		pe.data() + directory_rva->value());
+		pe.data() + directory_rva.value());
 
 	for (std::uint32_t j = 0; j < count; j++, updated_runtime_function++)
 	{
@@ -399,11 +391,11 @@ void binwrite::rewrite_frame_pointers(portable_executable_t& pe, exception_conte
 
 	for (const auto& function : pe.functions())
 	{
-		function_map[function->rva()->value()] = function;
+		function_map[function->rva().value()] = function;
 	}
 
 	block_insertion_list_t block_instructions;
-	std::vector<std::pair<std::shared_ptr<rva_t>, std::vector<std::uint8_t>>> unwind_code_insertions;
+	std::vector<std::pair<rva_t, std::vector<std::uint8_t>>> unwind_code_insertions;
 	std::vector<std::pair<std::shared_ptr<symbol_ref_t>, std::vector<std::uint8_t>>> unwind_info_insertions;
 
 	const auto data_directory = image->nt_headers()->optional_header.data_directories.exception_directory;
@@ -413,7 +405,7 @@ void binwrite::rewrite_frame_pointers(portable_executable_t& pe, exception_conte
 		return;
 	}
 
-	const auto directory_rva = pe.add_rva(data_directory.virtual_address);
+	const auto directory_rva = rva_t(data_directory.virtual_address);
 	const std::uint32_t count = data_directory.size / sizeof(portable_executable::runtime_function_t);
 	auto runtime_function = reinterpret_cast<const portable_executable::runtime_function_t*>(
 		buffer.data() + data_directory.virtual_address);

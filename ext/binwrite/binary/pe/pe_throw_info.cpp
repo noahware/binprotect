@@ -86,7 +86,7 @@ void binwrite::queue_throw_info_code_targets(portable_executable_t& pe)
 
 			if (type->optional_copy_constructor_rva && pe.is_in_code_section(rva_t{ type->optional_copy_constructor_rva }))
 			{
-				pe.add_to_disassembly_queue(pe.add_rva(type->optional_copy_constructor_rva));
+				pe.add_to_disassembly_queue(rva_t(type->optional_copy_constructor_rva));
 			}
 		}
 
@@ -94,7 +94,7 @@ void binwrite::queue_throw_info_code_targets(portable_executable_t& pe)
 
 		if (throw_info->pmfn_unwind && pe.is_rva_valid(pmfn_unwind_rva) && pe.is_in_code_section(pmfn_unwind_rva))
 		{
-			pe.add_to_disassembly_queue(pe.add_rva(pmfn_unwind_rva));
+			pe.add_to_disassembly_queue(rva_t(pmfn_unwind_rva));
 		}
 	});
 }

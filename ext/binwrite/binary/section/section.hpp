@@ -21,9 +21,7 @@ namespace binwrite
 		explicit section_t(rva_t rva, size_type size, size_type padding, bool code_section,
 		                   bool headers_section = false);
 
-		void process_disruption(rva_t disruption_rva, rva_t::size_type disruption_size);
 
-		void insert(binary_t& binary, rva_t section_offset, std::span<const std::uint8_t> data);
 
 		[[nodiscard]] rva_t rva() const;
 		void set_rva(rva_t rva);

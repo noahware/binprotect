@@ -52,7 +52,7 @@ static void shuffle_block_copy(binwrite::binary_t& binary, binwrite::basic_block
 
 	const binwrite::basic_block_t::size_type count = basic_block.count();
 
-	basic_block.push(binary, shuffled_instructions, true, true);
+	basic_block.push(binary, shuffled_instructions);
 
 	basic_block.erase(binary, 0, count);
 }
@@ -223,7 +223,7 @@ void binprotect::opaque_predicate::do_pass(binwrite::binary_t& binary,
 					const auto jmp_placeholder = encode_unsigned_imm_operand(1);
 					const auto jmp_instr = jmp_instruction(jmp_placeholder).value();
 
-					const auto& pushed_jmp = start_block->push(binary, jmp_instr, true, true);
+					const auto& pushed_jmp = start_block->push(binary, jmp_instr);
 
 					binary.add_code_ref(start_block, pushed_jmp, fallthrough_block);
 				}

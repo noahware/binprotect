@@ -117,14 +117,14 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 				return false;
 			}
 
-			return exceptions_context->is_in_seh_range(block->rva()->value());
+			return exceptions_context->is_in_seh_range(block->original_rva()->value());
 		};
 
 		for (const auto& function : pe.functions())
 		{
 			if (exceptions_context)
 			{
-				const auto function_rva = function->rva()->value();
+				const auto function_rva = function->rva().value();
 
 				if (exceptions_context->is_fh_function(function_rva) || exceptions_context->is_handler_function(function_rva))
 				{
@@ -156,8 +156,8 @@ std::int32_t main(const std::int32_t argc, const char** const argv)
 				continue;
 			}
 
-			const bool in_seh = exceptions_context && basic_block->rva() &&
-				exceptions_context->is_in_seh_range(basic_block->rva()->value());
+			const bool in_seh = exceptions_context && basic_block->original_rva() &&
+				exceptions_context->is_in_seh_range(basic_block->original_rva()->value());
 
 			if (config->opaque_predicates)
 			{

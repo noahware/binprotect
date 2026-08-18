@@ -26,8 +26,8 @@ void vm_context_t::exit_virtualized_state(binwrite::binary_t& binary)
 
 	pop_registers(instructions);
 
-	previous_block_->push(binary, instructions, true);
-	previous_block_->push(binary, ret_instruction().value(), true);
+	previous_block_->push(binary, instructions);
+	previous_block_->push(binary, ret_instruction().value());
 
 	segments_.push_back({ entry_block_, previous_block_, stack_registers_ });
 
@@ -63,7 +63,7 @@ void vm_context_t::compile_instruction(binwrite::binary_t& binary)
 		enter_virtualized_state(binary);
 	}
 
-	previous_block_->push(binary, current_instruction_.load, true);
+	previous_block_->push(binary, current_instruction_.load);
 
 	const auto handler_block = binary.create_basic_block(current_instruction_.handler);
 

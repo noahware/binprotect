@@ -13,7 +13,7 @@ void binwrite::portable_executable_t::add_load_config_table_rvas(
 
 		for (std::size_t i = 0; i < table.size; i++, entry++)
 		{
-			add_data_rva_ref(entry);
+			record_data_ref(entry);
 		}
 	}
 }
@@ -29,12 +29,12 @@ void binwrite::portable_executable_t::add_load_config_rvas(const portable_execut
 
 	if (load_config->dynamic_value_reloc_table_rva)
 	{
-		add_data_rva_ref(&load_config->dynamic_value_reloc_table_rva);
+		record_data_ref(&load_config->dynamic_value_reloc_table_rva);
 	}
 
 	if (load_config->hot_patch_table_rva)
 	{
-		add_data_rva_ref(&load_config->hot_patch_table_rva);
+		record_data_ref(&load_config->hot_patch_table_rva);
 	}
 
 	add_load_config_table_rvas(load_config->guard_cf_function_table);
@@ -50,9 +50,9 @@ void binwrite::portable_executable_t::add_misc_rvas(const portable_executable::n
 
 	if (*entry_point_ptr)
 	{
-		add_to_disassembly_queue(add_rva(*entry_point_ptr));
+		add_to_disassembly_queue(rva_t(*entry_point_ptr));
 
-		add_data_rva_ref(entry_point_ptr);
+		record_data_ref(entry_point_ptr);
 	}
 }
 
@@ -65,7 +65,7 @@ void binwrite::portable_executable_t::add_data_directory_rvas(const portable_exe
 			continue;
 		}
 
-		add_data_rva_ref(&directory.virtual_address);
+		record_data_ref(&directory.virtual_address);
 	}
 }
 
@@ -95,7 +95,7 @@ void binwrite::portable_executable_t::parse_resource_directory_rvas(const portab
 		{
 			const auto data_entry = entry->as_data(root_directory);
 
-			add_data_rva_ref(&data_entry->data_rva);
+			record_data_ref(&data_entry->data_rva);
 		}
 	}
 }
@@ -113,9 +113,9 @@ void binwrite::portable_executable_t::add_import_rvas(const portable_executable:
 
 	while (import_descriptor->misc.characteristics)
 	{
-		add_data_rva_ref(&import_descriptor->misc.original_first_thunk);
-		add_data_rva_ref(&import_descriptor->first_thunk);
-		add_data_rva_ref(&import_descriptor->name);
+		record_data_ref(&import_descriptor->misc.original_first_thunk);
+		record_data_ref(&import_descriptor->first_thunk);
+		record_data_ref(&import_descriptor->name);
 
 		const auto original_thunk = reinterpret_cast<const portable_executable::thunk_data_t*>(data() + import_descriptor->misc.original_first_thunk);
 
@@ -138,12 +138,12 @@ void binwrite::portable_executable_t::add_delay_import_rvas(const portable_execu
 
 	while (import_descriptor->import_address_table_rva)
 	{
-		add_data_rva_ref(&import_descriptor->dll_name_rva);
-		add_data_rva_ref(&import_descriptor->module_handle_rva);
-		add_data_rva_ref(&import_descriptor->import_address_table_rva);
-		add_data_rva_ref(&import_descriptor->import_name_table_rva);
-		add_data_rva_ref(&import_descriptor->bound_import_address_table_rva);
-		add_data_rva_ref(&import_descriptor->unload_information_table_rva);
+		record_data_ref(&import_descriptor->dll_name_rva);
+		record_data_ref(&import_descriptor->module_handle_rva);
+		record_data_ref(&import_descriptor->import_address_table_rva);
+		record_data_ref(&import_descriptor->import_name_table_rva);
+		record_data_ref(&import_descriptor->bound_import_address_table_rva);
+		record_data_ref(&import_descriptor->unload_information_table_rva);
 
 		const auto original_thunk = reinterpret_cast<const portable_executable::thunk_data_t*>(data() + import_descriptor->import_name_table_rva);
 
@@ -159,7 +159,7 @@ void binwrite::portable_executable_t::parse_import_thunk_rvas(const portable_exe
 	{
 		if (!original_thunk->is_ordinal)
 		{
-			add_data_rva_ref(&original_thunk->address);
+			record_data_ref(&original_thunk->address);
 		}
 
 		original_thunk++;
@@ -182,11 +182,11 @@ void binwrite::portable_executable_t::add_debug_rvas(const portable_executable::
 
 	while (entry < end)
 	{
-		add_data_rva_ref(&entry->virtual_address);
+		record_data_ref(&entry->virtual_address);
 
 		// todo: remove when starting to use compression
 		entry->pointer_to_raw_data = entry->virtual_address;
-		add_data_rva_ref(&entry->pointer_to_raw_data);
+		record_data_ref(&entry->pointer_to_raw_data);
 
 		entry++;
 	}
@@ -205,12 +205,12 @@ void binwrite::portable_executable_t::add_export_rvas(const portable_executable:
 
 	if (export_directory->name)
 	{
-		add_data_rva_ref(&export_directory->name);
+		record_data_ref(&export_directory->name);
 	}
 
-	add_data_rva_ref(&export_directory->address_of_functions);
-	add_data_rva_ref(&export_directory->address_of_names);
-	add_data_rva_ref(&export_directory->address_of_name_ordinals);
+	record_data_ref(&export_directory->address_of_functions);
+	record_data_ref(&export_directory->address_of_names);
+	record_data_ref(&export_directory->address_of_name_ordinals);
 
 	const auto functions = reinterpret_cast<const std::uint32_t*>(data() + export_directory->address_of_functions);
 	const auto names = reinterpret_cast<const std::uint32_t*>(data() + export_directory->address_of_names);
@@ -221,10 +221,10 @@ void binwrite::portable_executable_t::add_export_rvas(const portable_executable:
 		const auto current_ordinal = name_ordinals[i];
 		const auto current_function_ptr = &functions[current_ordinal];
 
-		add_data_rva_ref(current_function_ptr);
-		add_data_rva_ref(&names[i]);
+		record_data_ref(current_function_ptr);
+		record_data_ref(&names[i]);
 
-		add_to_disassembly_queue(add_rva(*current_function_ptr));
+		add_to_disassembly_queue(rva_t(*current_function_ptr));
 	}
 }
 
@@ -248,7 +248,7 @@ void binwrite::portable_executable_t::add_relocation_rvas(const portable_executa
 
 		for (std::uint32_t i = 0; i < entry_count; i++, entry_descriptor++)
 		{
-			const auto rva = add_relocation_rva(block_descriptor->virtual_address + entry_descriptor->offset);
+			const auto rva = rva_t(block_descriptor->virtual_address + entry_descriptor->offset);
 			const auto type = entry_descriptor->type;
 
 			if (type == portable_executable::relocation_type_t::absolute)
@@ -256,22 +256,22 @@ void binwrite::portable_executable_t::add_relocation_rvas(const portable_executa
 				continue;
 			}
 
-			relocations_.push_back(std::make_shared<pe_relocation_t>(find_or_split_symbol(*rva), type));
+			relocations_.push_back(std::make_shared<pe_relocation_t>(find_or_split_symbol(rva), type));
 
 			if (type == portable_executable::relocation_type_t::dir64)
 			{
-				const auto image_offsetted_target = *reinterpret_cast<std::uint64_t*>(data() + rva->value());
+				const auto image_offsetted_target = *reinterpret_cast<std::uint64_t*>(data() + rva.value());
 
-				const auto target_rva = add_rva(static_cast<std::uint32_t>(image_offsetted_target - image_base()));
+				const auto target_rva = rva_t(static_cast<std::uint32_t>(image_offsetted_target - image_base()));
 
-				if (is_in_code_section(*target_rva))
+				if (is_in_code_section(target_rva))
 				{
-					const bool risky = !static_cast<bool>(find_function(*target_rva)) || is_inside_runtime_function(*target_rva);
+					const bool risky = !static_cast<bool>(find_function(target_rva)) || is_inside_runtime_function(target_rva);
 
 					add_to_disassembly_queue(target_rva, risky);
 				}
 
-				add_rva_ref(std::make_shared<pe_dir64_reloc_t>(target_rva, *rva));
+				record_dir64_ref(rva, target_rva);
 			}
 			else
 			{
@@ -289,15 +289,15 @@ void binwrite::portable_executable_t::add_unwind_info_rvas(const portable_execut
 	{
 		const auto* const chained = unwind_info->language_specific_data<portable_executable::runtime_function_t>();
 
-		add_data_rva_ref(&chained->begin_address);
-		add_data_rva_ref(&chained->end_address);
-		add_data_rva_ref(&chained->unwind_info_rva, false, 4);
+		record_data_ref(&chained->begin_address);
+		record_data_ref(&chained->end_address);
+		record_data_ref(&chained->unwind_info_rva, 4);
 	}
 	else if (unwind_info->has_handler())
 	{
 		const auto* const handler_rva = unwind_info->language_specific_data<std::uint32_t>();
 
-		add_data_rva_ref(handler_rva);
+		record_data_ref(handler_rva);
 	}
 }
 
@@ -318,14 +318,14 @@ void binwrite::portable_executable_t::add_exception_rvas(const portable_executab
 		if (runtime_function->begin_address < runtime_function->end_address)
 		{
 			runtime_functions_.push_back({
-				.begin = add_rva(runtime_function->begin_address),
-				.end = add_rva(runtime_function->end_address)
+				.begin = rva_t(runtime_function->begin_address),
+				.end = rva_t(runtime_function->end_address)
 			});
 		}
 
-		add_data_rva_ref(&runtime_function->begin_address);
-		add_data_rva_ref(&runtime_function->end_address);
-		add_data_rva_ref(&runtime_function->unwind_info_rva, false, 4);
+		record_data_ref(&runtime_function->begin_address);
+		record_data_ref(&runtime_function->end_address);
+		record_data_ref(&runtime_function->unwind_info_rva, 4);
 
 		if (runtime_function->unwind_info_rva && is_rva_valid(rva_t{ runtime_function->unwind_info_rva }))
 		{
