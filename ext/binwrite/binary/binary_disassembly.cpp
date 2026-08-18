@@ -464,17 +464,6 @@ void binwrite::binary_t::process_disassembly_queue()
 		const auto entry = disassembly_queue_.front();
 		disassembly_queue_.pop_front();
 
-		std::shared_ptr<symbol_t> placeholder;
-
-		if (const auto it = disassembly_symbol_map_.find(entry.rva->value()); it != disassembly_symbol_map_.end())
-		{
-			if (const auto db = std::dynamic_pointer_cast<data_block_t>(it->second))
-			{
-				placeholder = db;
-				erase_symbol(placeholder);
-			}
-		}
-
 		std::vector<instruction_t> instructions = { };
 		std::vector<std::shared_ptr<rva_t>> risky_references = { };
 
@@ -484,6 +473,18 @@ void binwrite::binary_t::process_disassembly_queue()
 			instructions.empty())
 		{
 			continue;
+		}
+
+		std::shared_ptr<symbol_t> placeholder;
+
+		if (const auto it = disassembly_symbol_map_.find(entry.rva->value()); it != disassembly_symbol_map_.end())
+		{
+			if (const auto db = std::dynamic_pointer_cast<data_block_t>(it->second))
+			{
+				placeholder = db;
+
+				erase_symbol(placeholder);
+			}
 		}
 
 		const auto section = find_section(*entry.rva);
@@ -499,7 +500,8 @@ void binwrite::binary_t::process_disassembly_queue()
 
 		for (const auto& risky_rva : risky_references)
 		{
-			if (find_rva_ref(*risky_rva))
+			// a reference site, such as a jump table entry, holds data and must not be disassembled
+			if (find_rva_ref(*risky_rva) || find_symbol_ref<symbol_ref_t>(*risky_rva))
 			{
 				continue;
 			}
@@ -510,12 +512,37 @@ void binwrite::binary_t::process_disassembly_queue()
 
 	if (!placeholder_replacements.empty())
 	{
+		std::unordered_set<const symbol_ref_t*> dangling_refs;
+
 		for (const auto& ref : symbol_refs_)
 		{
+			// a placeholder that turned out to hold code cannot have references written into it anymore
+			if (placeholder_replacements.contains(ref->self().get()))
+			{
+				dangling_refs.insert(ref.get());
+
+				continue;
+			}
+
 			if (const auto it = placeholder_replacements.find(ref->target().get()); it != placeholder_replacements.end())
 			{
 				ref->set_target(it->second);
 			}
+		}
+
+		if (!dangling_refs.empty())
+		{
+			spdlog::info("erased {} symbol ref(s) written into disassembled placeholders", dangling_refs.size());
+
+			std::erase_if(symbol_refs_, [&dangling_refs](const std::shared_ptr<symbol_ref_t>& ref)
+			{
+				return dangling_refs.contains(ref.get());
+			});
+
+			std::erase_if(symbol_ref_map_, [&dangling_refs](const auto& entry)
+			{
+				return dangling_refs.contains(entry.second.get());
+			});
 		}
 	}
 

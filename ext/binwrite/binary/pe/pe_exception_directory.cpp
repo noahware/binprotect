@@ -511,6 +511,11 @@ exception_context_t binwrite::parse_exception_directory(portable_executable_t& p
 
 			pe.add_to_disassembly_queue(pe.add_rva(runtime_function->begin_address));
 
+			if (!context.unwind_info_insertion_rva)
+			{
+				context.unwind_info_insertion_rva = pe.add_rva(runtime_function->unwind_info_rva);
+			}
+
 			const auto unwind_info = reinterpret_cast<const portable_executable::unwind_info_t*>(pe.data() + runtime_function->unwind_info_rva);
 
 			process_unwind_info(pe, rva_t{ runtime_function->begin_address }, unwind_info);

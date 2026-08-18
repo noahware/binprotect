@@ -4,6 +4,8 @@
 
 #include <portable-executable/image.hpp>
 
+#include <array>
+
 namespace binwrite
 {
 	class pe_relocation_t : public relocation_t
@@ -26,8 +28,8 @@ namespace binwrite
 
 	struct runtime_function_params_t
 	{
-		rva_t::value_type begin_address;
-		rva_t::value_type end_address;
+		std::shared_ptr<symbol_t> begin_symbol;
+		std::shared_ptr<symbol_t> end_symbol;
 		std::vector<portable_executable::unwind_code_t> unwind_codes;
 		portable_executable::unwind_register_t frame_register;
 		std::uint8_t frame_offset;
@@ -54,9 +56,7 @@ namespace binwrite
 		[[nodiscard]] bool has_exceptions_directory() const;
 		[[nodiscard]] bool is_inside_runtime_function(rva_t rva) const;
 
-		void add_runtime_function(const runtime_function_params_t& params,
-		                          const std::shared_ptr<rva_t>& exception_directory_rva,
-		                          const std::shared_ptr<rva_t>& unwind_insertion_rva);
+		void add_runtime_function(const runtime_function_params_t& params);
 
 	protected:
 		struct runtime_function_t
@@ -66,6 +66,8 @@ namespace binwrite
 		};
 
 		std::vector<runtime_function_t> runtime_functions_;
+
+		void finalize_exception_directory();
 
 		void find_sections() override;
 		void update_section_headers() override;
@@ -107,5 +109,6 @@ namespace binwrite
 		}
 
 		void find_data_rvas() override;
+		void finalize_before_recompile() override;
 	};
 }

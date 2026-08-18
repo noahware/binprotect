@@ -200,15 +200,14 @@ void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
 			                          static_cast<std::uint8_t>(portable_executable::unwind_register_t::rbp));
 
 			pe.add_runtime_function({
-				.begin_address = entry_block->rva()->value(),
-				.end_address = exit_block->end_rva().value(),
+				.begin_symbol = entry_block,
+				.end_symbol = exit_block,
 				.unwind_codes = std::move(unwind_codes),
 				.frame_register = portable_executable::unwind_register_t::rbp,
 				.frame_offset = 0,
 				.prolog_size = current_offset,
 				.flags = 0
-			}, exception_directory_rva,
-			unwind_insertion_rva);
+			});
 		}
 	}
 }
