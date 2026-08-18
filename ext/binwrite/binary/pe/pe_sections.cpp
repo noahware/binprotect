@@ -133,6 +133,18 @@ void binwrite::portable_executable_t::update_section_headers()
 	}
 
 	nt_headers->optional_header.size_of_image = section_rva.value();
+	nt_headers->optional_header.dll_characteristics &= ~0x4000;
+
+	if (const auto load_config = image()->load_config())
+	{
+		load_config->guard_cf_check_function_pointer = 0;
+		load_config->guard_cf_dispatch_function_pointer = 0;
+		load_config->guard_long_jump_target_table.virtual_address = 0;
+		load_config->guard_long_jump_target_table.size = 0;
+		load_config->guard_eh_continuation_table.virtual_address = 0;
+		load_config->guard_eh_continuation_table.size = 0;
+		load_config->guard_flags = 0;
+	}
 
 	const auto reloc_va = nt_headers->optional_header.data_directories.basereloc_directory.virtual_address;
 	const auto reloc_it = disassembly_symbol_map_.find(reloc_va);

@@ -253,6 +253,8 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::basic_block_t::split_at(binar
 
 	new_basic_block->move_after(shared_from_this());
 
+	binary.reanchor_split_refs(std::dynamic_pointer_cast<basic_block_t>(shared_from_this()), new_basic_block);
+
 	return new_basic_block;
 }
 

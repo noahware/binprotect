@@ -203,6 +203,39 @@ void binwrite::binary_t::unlink_basic_block(std::shared_ptr<basic_block_t> basic
 	}
 }
 
+void binwrite::binary_t::reanchor_split_refs(const std::shared_ptr<basic_block_t>& original,
+                                             const std::shared_ptr<basic_block_t>& split_off)
+{
+	if (!original || !split_off)
+	{
+		return;
+	}
+
+	const auto moved = [&split_off](const instruction_t::id_type id)
+	{
+		return id != 0 && split_off->instruction_index_by_id(id) != basic_block_t::invalid_index;
+	};
+
+	for (const auto& symbol_ref : symbol_refs_)
+	{
+		if (const auto code_ref = std::dynamic_pointer_cast<code_symbol_ref_t>(symbol_ref);
+			code_ref && code_ref->self() == original && moved(code_ref->self_instr_id()))
+		{
+			code_ref->set_self(split_off);
+
+			continue;
+		}
+
+		// the end of the original block is now the end of the block split off of it
+		if (const auto data_ref = std::dynamic_pointer_cast<data_symbol_ref_t>(symbol_ref);
+			data_ref && data_ref->anchor() == data_symbol_ref_t::anchor_t::at_end
+			&& data_ref->target() == original)
+		{
+			data_ref->set_target(split_off);
+		}
+	}
+}
+
 std::span<std::shared_ptr<binwrite::basic_block_t>> binwrite::binary_t::basic_blocks()
 {
 	return basic_blocks_;
@@ -325,6 +358,8 @@ std::shared_ptr<binwrite::basic_block_t> binwrite::binary_t::split_basic_block(b
 			}
 		}
 	}
+
+	reanchor_split_refs(std::dynamic_pointer_cast<basic_block_t>(basic_block.shared_from_this()), new_basic_block);
 
 	return new_basic_block;
 }
@@ -522,6 +557,8 @@ void binwrite::binary_t::reindex_basic_blocks() const
 
 void binwrite::binary_t::recompile()
 {
+	finalize_before_recompile();
+
 	for (const auto& symbol_ref : symbol_refs_)
 	{
 		if (!symbol_ref->widen_encoding(*this))

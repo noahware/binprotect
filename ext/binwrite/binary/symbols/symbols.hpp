@@ -152,7 +152,26 @@ namespace binwrite
 	public:
 		using symbol_ref_t::symbol_ref_t;
 
+		enum class anchor_t : std::uint8_t
+		{
+			at_start,
+			at_end
+		};
+
 		bool patch_reference(binary_t& binary) override;
+
+		void set_anchor(const anchor_t anchor) noexcept
+		{
+			anchor_ = anchor;
+		}
+
+		[[nodiscard]] anchor_t anchor() const noexcept
+		{
+			return anchor_;
+		}
+
+	protected:
+		anchor_t anchor_ = anchor_t::at_start;
 	};
 
 	class code_symbol_ref_t : public symbol_ref_t

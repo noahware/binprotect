@@ -7,28 +7,34 @@
 #include <cstring>
 #include <spdlog/spdlog.h>
 
-bool binwrite::data_symbol_ref_t::patch_reference(binary_t& binary)
+static bool write_data_reference(binwrite::binary_t& binary, const std::optional<binwrite::rva_t> self_rva,
+	const std::optional<binwrite::rva_t> target_rva, const binwrite::symbol_ref_t::size_type encoding_size)
 {
-	const auto self_rva = self_->rva();
-	const auto target_rva = target_->rva();
-
 	if (!self_rva || !target_rva)
 	{
 		return false;
 	}
 
-	const rva_t::value_type target_value = target_rva->value();
+	const binwrite::rva_t::value_type target_value = target_rva->value();
 
 	std::uint8_t* const destination = binary.data() + self_rva->value();
 
 	const auto source = reinterpret_cast<const std::uint8_t*>(&target_value);
 
-	const size_type copy_size = std::min(encoding_size_, static_cast<size_type>(sizeof(rva_t::size_type)));
+	const auto copy_size = std::min(encoding_size,
+		static_cast<binwrite::symbol_ref_t::size_type>(sizeof(binwrite::rva_t::size_type)));
 
-	std::memset(destination, 0, encoding_size_);
+	std::memset(destination, 0, encoding_size);
 	std::memcpy(destination, source, copy_size);
 
 	return true;
+}
+
+bool binwrite::data_symbol_ref_t::patch_reference(binary_t& binary)
+{
+	const auto target_rva = anchor_ == anchor_t::at_end ? target_->end_rva() : target_->rva();
+
+	return write_data_reference(binary, self_->rva(), target_rva, encoding_size_);
 }
 
 static std::optional<binwrite::rva_t> resolve_instr_rva(const std::shared_ptr<binwrite::symbol_t>& symbol,

@@ -85,6 +85,10 @@ namespace binwrite
 
 		void unlink_basic_block(std::shared_ptr<basic_block_t> basic_block);
 
+		// instructions that move into a split off block take the references anchored to them with them
+		void reanchor_split_refs(const std::shared_ptr<basic_block_t>& original,
+		                         const std::shared_ptr<basic_block_t>& split_off);
+
 		[[nodiscard]] std::span<std::shared_ptr<basic_block_t>> basic_blocks();
 		[[nodiscard]] std::span<const std::shared_ptr<basic_block_t>> basic_blocks() const;
 
@@ -331,6 +335,7 @@ namespace binwrite
 		void populate_code_symbol_refs();
 		void populate_dir64_reloc_symbol_refs();
 		void populate_fh4_encoded_symbol_refs();
+		virtual void finalize_before_recompile() { }
 
 		void process_instruction_rip_relativity(const disassembled_instruction_t& disassembled_instruction,
 		                                        rva_t instruction_rva, rva_t next_instruction_rva,
