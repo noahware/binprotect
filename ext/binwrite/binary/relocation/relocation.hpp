@@ -1,5 +1,5 @@
 #pragma once
-#include "../rva/rva.hpp"
+#include "../symbols/symbols.hpp"
 
 #include <memory>
 
@@ -12,17 +12,17 @@ namespace binwrite
 
 		relocation_t() = default;
 
-		explicit relocation_t(std::shared_ptr<rva_t> target)
+		explicit relocation_t(std::shared_ptr<symbol_t> target)
 				:	target_(std::move(target)) { }
 
-		[[nodiscard]] rva_t target() const
+		[[nodiscard]] std::shared_ptr<symbol_t> target() const
 		{
-			return *target_;
+			return target_;
 		}
 
 		[[nodiscard]] virtual reloc_type type() const = 0;
 
 	protected:
-		std::shared_ptr<rva_t> target_;
+		std::shared_ptr<symbol_t> target_;
 	};
 }

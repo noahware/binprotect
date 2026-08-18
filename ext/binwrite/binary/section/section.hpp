@@ -1,26 +1,27 @@
 #pragma once
+#include <list>
+#include <memory>
+
 #include "../rva/rva.hpp"
 
 namespace binwrite
 {
+	class symbol_t;
 	class binary_t;
 
-	class section_t
+	using symbol_list_t = std::list<std::shared_ptr<symbol_t>>;
+
+	class section_t : public std::enable_shared_from_this<section_t>
 	{
 	public:
 		using size_type = std::uint32_t;
 
 		section_t() = default;
 
-		explicit section_t(const rva_t rva, const size_type size, const size_type padding, const bool code_section)
-				:	rva_(rva),
-					size_(size),
-					padding_(padding),
-					code_(code_section) { }
+		explicit section_t(rva_t rva, size_type size, size_type padding, bool code_section,
+		                   bool headers_section = false);
 
-		void process_disruption(rva_t disruption_rva, rva_t::size_type disruption_size);
 
-		void insert(binary_t& binary, rva_t section_offset, std::span<const std::uint8_t> data);
 
 		[[nodiscard]] rva_t rva() const;
 		void set_rva(rva_t rva);
@@ -30,6 +31,7 @@ namespace binwrite
 		[[nodiscard]] bool contains(rva_t rva) const;
 		[[nodiscard]] bool code() const;
 		[[nodiscard]] bool data() const;
+		[[nodiscard]] bool headers() const;
 
 		[[nodiscard]] size_type size() const;
 		void set_size(size_type size);
@@ -40,10 +42,30 @@ namespace binwrite
 		void remove_padding(size_type size);
 		void add_padding(size_type size);
 
+		[[nodiscard]] std::uint8_t padding_value() const
+		{
+			return code() ? 0xCC : 0x00;
+		}
+
+		void add_symbol(std::shared_ptr<symbol_t> symbol);
+
+		[[nodiscard]] const symbol_list_t& symbols() const
+		{
+			return symbols_;
+		}
+
+		void move_symbol_after(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol);
+		void move_symbol_before(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol);
+		void remove_symbol(const std::shared_ptr<symbol_t>& symbol);
+		void sort_by_rva();
+
 	protected:
+		symbol_list_t symbols_;
+
 		rva_t rva_;
 		size_type size_;
 		size_type padding_;
 		bool code_;
+		bool headers_;
 	};
 }

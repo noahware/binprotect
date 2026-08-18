@@ -22,9 +22,9 @@ struct complete_object_locator_t
 	std::uint32_t self_rva;
 };
 
-static std::shared_ptr<binwrite::pe_dir64_reloc_t> dir64_reloc_ref_at(const binwrite::portable_executable_t& pe, const binwrite::rva_t rva)
+static std::shared_ptr<binwrite::dir64_reloc_symbol_ref_t> dir64_reloc_ref_at(const binwrite::portable_executable_t& pe, const binwrite::rva_t rva)
 {
-	return std::dynamic_pointer_cast<binwrite::pe_dir64_reloc_t>(pe.find_rva_ref(rva));
+	return pe.find_symbol_ref<binwrite::dir64_reloc_symbol_ref_t>(rva);
 }
 
 struct type_descriptor_t
@@ -38,10 +38,17 @@ struct type_descriptor_t
 			return false;
 		}
 
-		const auto vftable_rva = vftable_ref->target();
+		const auto vftable_rva = vftable_ref->target()->rva();
+
+		if (!vftable_rva)
+		{
+			return false;
+		}
+
 		const auto virtual_function_entry = dir64_reloc_ref_at(pe, *vftable_rva);
 
-		if (!virtual_function_entry || !pe.is_in_code_section(*virtual_function_entry->target()))
+		if (!virtual_function_entry || !virtual_function_entry->target()->rva() ||
+			!pe.is_in_code_section(*virtual_function_entry->target()->rva()))
 		{
 			return false;
 		}
@@ -160,10 +167,10 @@ static bool parse_hierarchy_descriptor(binwrite::portable_executable_t& pe, cons
 
 	for (const auto ref : pending_refs)
 	{
-		pe.add_data_rva_ref(ref);
+		pe.add_data_symbol_ref(ref);
 	}
 
-	pe.add_data_rva_ref(&hierarchy_descriptor->base_class_list_rva);
+	pe.add_data_symbol_ref(&hierarchy_descriptor->base_class_list_rva);
 
 	return true;
 }
@@ -188,9 +195,9 @@ static bool parse_complete_object_locator(binwrite::portable_executable_t& pe, c
 		return false;
 	}
 
-	pe.add_data_rva_ref(&object_locator->type_rva);
-	pe.add_data_rva_ref(&object_locator->hierarchy_rva);
-	pe.add_data_rva_ref(&object_locator->self_rva);
+	pe.add_data_symbol_ref(&object_locator->type_rva);
+	pe.add_data_symbol_ref(&object_locator->hierarchy_rva);
+	pe.add_data_symbol_ref(&object_locator->self_rva);
 
 	type_descriptor_rvas.insert(object_locator->type_rva);
 
@@ -216,18 +223,24 @@ binwrite::rtti_info_t binwrite::parse_rtti(portable_executable_t& pe)
 		{
 			if (const auto dir64_reloc = dir64_reloc_ref_at(pe, rva))
 			{
-				const auto reloc_target = dir64_reloc->target();
+				const auto self_rva = dir64_reloc->self()->rva();
+				const auto target_rva = dir64_reloc->target()->rva();
 
-				if (type_descriptor_rvas.contains(dir64_reloc->self().value()))
+				if (!self_rva || !target_rva)
 				{
 					continue;
 				}
 
-				if (!parse_complete_object_locator(pe, *reloc_target, type_descriptor_rvas))
+				if (type_descriptor_rvas.contains(self_rva->value()))
 				{
-					if (parse_type_descriptor(pe, dir64_reloc->self()))
+					continue;
+				}
+
+				if (!parse_complete_object_locator(pe, *target_rva, type_descriptor_rvas))
+				{
+					if (parse_type_descriptor(pe, *self_rva))
 					{
-						type_descriptor_rvas.insert(dir64_reloc->self().value());
+						type_descriptor_rvas.insert(self_rva->value());
 					}
 				}
 			}

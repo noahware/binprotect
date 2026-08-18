@@ -56,26 +56,35 @@ static bool is_safe_vm_instruction(const binwrite::disassembled_instruction_t& i
 }
 
 static void insert_call_to_block(binwrite::binary_t& binary,
-	binwrite::basic_block_t& source_block,
+	const std::shared_ptr<binwrite::basic_block_t>& source_block,
 	const binwrite::basic_block_t::size_type index,
-	const binwrite::basic_block_t& target_block)
+	const std::shared_ptr<binwrite::basic_block_t>& target_block)
 {
 	const auto destination_placeholder = encode_unsigned_imm_operand(1);
 	const auto instruction = call_instruction(destination_placeholder).value();
 
-	source_block.insert(binary, instruction, index);
+	source_block->insert(binary, instruction, index);
 
-	const binwrite::rva_t instruction_rva = source_block.instruction_rva(index);
+	const auto ref = std::make_shared<binwrite::code_symbol_ref_t>(
+		target_block, source_block,
+		static_cast<binwrite::symbol_ref_t::size_type>(instruction.size()));
 
-	binary.add_rva_ref(std::make_shared<binwrite::code_rva_ref_t>(target_block.rva(), instruction_rva, instruction.size()));
+	ref->set_self_instr_id(source_block->at(index).id());
+
+	binary.add_symbol_ref(ref);
 }
 
 std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary, binwrite::basic_block_t& basic_block,
-                             std::shared_ptr<binwrite::rva_t> insertion_rva,
                              std::vector<std::shared_ptr<binwrite::basic_block_t>>& virtual_machine_blocks)
 {
 	const auto context = std::make_shared<vm_context_t>(binwrite::register_family_t::general_purpose);
-	context->set_insertion_rva(std::move(insertion_rva));
+	const auto self_symbol = basic_block.shared_from_this();
+
+	if (std::ranges::any_of(binary.find_all_symbol_refs_by_self(self_symbol),
+		[](const auto& ref) { return !std::dynamic_pointer_cast<binwrite::code_symbol_ref_t>(ref); }))
+	{
+		return context;
+	}
 
 	const std::span<const binwrite::instruction_t> original_instructions = basic_block.instructions();
 	const std::vector instructions(original_instructions.begin(), original_instructions.end());
@@ -87,7 +96,8 @@ std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary
 		const auto& instruction = instructions[i];
 		const auto& disassembled_instruction = instruction.disassemble();
 
-		if (!is_safe_vm_instruction(disassembled_instruction))
+		if (!is_safe_vm_instruction(disassembled_instruction) ||
+			binary.has_code_ref_from_instruction(self_symbol, instruction.id()))
 		{
 			context->exit_virtualized_state(binary);
 
@@ -95,14 +105,6 @@ std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary
 		}
 
 		const auto basic_block_index = i - erased;
-		const binwrite::rva_t instruction_rva = basic_block.instruction_rva(basic_block_index);
-
-		if (binary.find_rva_ref(instruction_rva))
-		{
-			context->exit_virtualized_state(binary);
-
-			continue;
-		}
 
 		try
 		{
@@ -114,8 +116,9 @@ std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary
 			if (requires_entry)
 			{
 				const auto entry_block = context->entry_block();
+				const auto source_block = std::static_pointer_cast<binwrite::basic_block_t>(basic_block.shared_from_this());
 
-				insert_call_to_block(binary, basic_block, basic_block_index, *entry_block);
+				insert_call_to_block(binary, source_block, basic_block_index, entry_block);
 
 				basic_block.erase(binary, basic_block_index + 1);
 			}
@@ -144,15 +147,8 @@ std::shared_ptr<vm_context_t> binprotect::vm::do_pass(binwrite::binary_t& binary
 }
 
 void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
-                                            const std::vector<std::shared_ptr<vm_context_t>>& vm_contexts,
-											const std::shared_ptr<binwrite::rva_t>& exception_directory_rva,
-                                            const std::shared_ptr<binwrite::rva_t>& unwind_insertion_rva)
+                                            const std::vector<std::shared_ptr<vm_context_t>>& vm_contexts)
 {
-	if (!exception_directory_rva || !unwind_insertion_rva)
-	{
-		return;
-	}
-
 	for (const auto& vm_context : vm_contexts)
 	{
 		for (const auto& vm_segment : vm_context->segments())
@@ -160,6 +156,11 @@ void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
 			const auto& entry_block = vm_segment.entry_block;
 			const auto& exit_block = vm_segment.exit_block;
 			const auto& stack_registers = vm_segment.stack_registers;
+
+			if (!entry_block || !exit_block)
+			{
+				continue;
+			}
 
 			std::vector<std::pair<std::uint8_t, portable_executable::unwind_register_t>> pushed_registers;
 			std::vector<portable_executable::unwind_code_t> unwind_codes;
@@ -193,15 +194,14 @@ void binprotect::vm::emit_runtime_functions(binwrite::portable_executable_t& pe,
 			                          static_cast<std::uint8_t>(portable_executable::unwind_register_t::rbp));
 
 			pe.add_runtime_function({
-				.begin_address = entry_block->rva()->value(),
-				.end_address = exit_block->end_rva().value(),
+				.begin_symbol = entry_block,
+				.end_symbol = exit_block,
 				.unwind_codes = std::move(unwind_codes),
 				.frame_register = portable_executable::unwind_register_t::rbp,
 				.frame_offset = 0,
 				.prolog_size = current_offset,
 				.flags = 0
-			}, exception_directory_rva,
-			unwind_insertion_rva);
+			});
 		}
 	}
 }

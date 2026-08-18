@@ -1,0 +1,204 @@
+#pragma once
+#include <vector>
+
+#include "../binary/rva/rva.hpp"
+#include "../binary/symbols/symbols.hpp"
+#include "../arch/instruction/instruction.hpp"
+
+std::vector<std::uint8_t> group_instruction_bytes(std::span<const binwrite::instruction_t> instructions);
+
+namespace binwrite
+{
+	class binary_t;
+
+	class basic_block_t : public symbol_t
+	{
+	public:
+		constexpr static size_type invalid_index = -1;
+
+		basic_block_t() = default;
+
+		explicit basic_block_t(const std::span<const instruction_t> instructions)
+				:	instructions_(instructions.begin(), instructions.end())
+		{
+			recompute_size();
+		}
+
+		// the address this block was disassembled from. it is never updated, so once a pass has
+		// changed any instruction size it no longer corresponds to anything in the buffer. it stays
+		// meaningful only as the identity every index and exception range is keyed on. for a live
+		// address use symbol_t::rva(), which recompile() assigns
+		[[nodiscard]] std::optional<rva_t> original_rva() const
+		{
+			return original_rva_;
+		}
+
+		void set_original_rva(std::optional<rva_t> rva)
+		{
+			original_rva_ = std::move(rva);
+		}
+
+		// hides symbol_t::rva()/end_rva() so that a call on a basic block has to say which it means
+		std::optional<rva_t> rva() const = delete;
+		std::optional<rva_t> end_rva() const = delete;
+
+		[[nodiscard]] bool should_skip() const
+		{
+			return skip_;
+		}
+
+		void set_skip(const bool state)
+		{
+			skip_ = state;
+		}
+
+
+		[[nodiscard]] rva_t original_end_rva() const;
+		[[nodiscard]] rva_t original_instruction_rva(size_type index) const;
+		[[nodiscard]] size_type instruction_index(rva_t target_rva) const;
+
+
+		instruction_t& push(binary_t& binary, const instruction_t& instruction);
+		void push(binary_t& binary, std::span<const instruction_t> instructions);
+
+		instruction_t& insert(binary_t& binary, const instruction_t& instruction, size_type index);
+		void insert(binary_t& binary, std::span<const instruction_t> instructions, size_type index);
+
+		void erase(binary_t& binary, size_type index, size_type count);
+		void erase(binary_t& binary, size_type index);
+
+
+		[[nodiscard]] instruction_t& last_instruction()
+		{
+			return instructions_.at(count() - 1);
+		}
+
+		[[nodiscard]] const instruction_t& last_instruction() const
+		{
+			return instructions_.at(count() - 1);
+		}
+
+		[[nodiscard]] rva_t original_last_instruction_rva() const
+		{
+			return original_instruction_rva(count() - 1);
+		}
+
+		[[nodiscard]] instruction_t& at(const size_type index)
+		{
+			return instructions_.at(index);
+		}
+
+		[[nodiscard]] const instruction_t& at(const size_type index) const
+		{
+			return instructions_.at(index);
+		}
+
+		[[nodiscard]] std::span<instruction_t> instructions()
+		{
+			return { instructions_ };
+		}
+
+		[[nodiscard]] std::span<const instruction_t> instructions() const
+		{
+			return { instructions_ };
+		}
+
+		[[nodiscard]] size_type count() const
+		{
+			return static_cast<size_type>(instructions_.size());
+		}
+
+		[[nodiscard]] bool contains(const rva_t rva) const
+		{
+			return *original_rva_ <= rva && rva < original_end_rva();
+		}
+
+		// identity, not address: blocks created by a pass have no rva, and comparing those by
+		// value would make every one of them equal to every other
+		bool operator==(const basic_block_t& other) const
+		{
+			return this == &other;
+		}
+
+		[[nodiscard]] size_type size() const override
+		{
+			return total_size_;
+		}
+
+		void emit_bytes(std::vector<std::uint8_t>& buffer) const override
+		{
+			for (const auto& instruction : instructions_)
+			{
+				const auto bytes = instruction.bytes();
+
+				buffer.insert(buffer.end(), bytes.begin(), bytes.end());
+			}
+		}
+
+		[[nodiscard]] std::shared_ptr<symbol_t> split(binary_t& binary, size_type byte_offset) override;
+		[[nodiscard]] std::shared_ptr<basic_block_t> split_at(binary_t& binary, size_type index);
+
+		void replace_instruction(const size_type index, instruction_t instruction)
+		{
+			auto& slot = instructions_.at(index);
+			const auto preserved_id = slot.id();
+
+			slot = std::move(instruction);
+
+			if (slot.id() == 0)
+			{
+				slot.set_id(preserved_id);
+			}
+
+			recompute_size();
+		}
+
+		[[nodiscard]] size_type byte_offset_of_instruction_id(const instruction_t::id_type id) const
+		{
+			size_type cumulative = 0;
+
+			for (const auto& instruction : instructions_)
+			{
+				if (instruction.id() == id)
+				{
+					return cumulative;
+				}
+
+				cumulative += instruction.size();
+			}
+
+			return invalid_index;
+		}
+
+		[[nodiscard]] instruction_t::id_type instruction_id_at_byte_offset(const size_type byte_offset) const
+		{
+			const auto index = index_from_byte_offset(byte_offset);
+
+			return index == invalid_index ? 0 : instructions_.at(index).id();
+		}
+
+		[[nodiscard]] size_type instruction_index_by_id(const instruction_t::id_type id) const
+		{
+			for (size_type i = 0; i < count(); i++)
+			{
+				if (instructions_[i].id() == id)
+				{
+					return i;
+				}
+			}
+
+			return invalid_index;
+		}
+
+	protected:
+		void recompute_size();
+
+		size_type index_from_byte_offset(size_type byte_offset) const;
+
+		std::optional<rva_t> original_rva_;
+		std::vector<instruction_t> instructions_;
+		rva_t::value_type total_size_ = 0;
+
+		bool skip_ = false;
+	};
+}

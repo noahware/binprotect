@@ -1,32 +1,51 @@
 #include "section.hpp"
 #include "../binary.hpp"
+#include "../symbols/symbols.hpp"
 
-void binwrite::section_t::process_disruption(const rva_t disruption_rva, const rva_t::size_type disruption_size)
+void binwrite::section_t::add_symbol(std::shared_ptr<symbol_t> symbol)
 {
-	if (contains(disruption_rva))
-	{
-		size_ += disruption_size;
-	}
+	symbol->section_ = weak_from_this();
 
-	rva_.process_disruption(disruption_rva, disruption_size, false);
+	const auto it = symbols_.insert(symbols_.end(), std::move(symbol));
+
+	(*it)->list_iterator_ = it;
 }
 
-void binwrite::section_t::insert(binary_t& binary, const rva_t section_offset, const std::span<const std::uint8_t> data)
+void binwrite::section_t::move_symbol_after(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol)
 {
-	if (size_ < section_offset.value())
+	if (location == movable_symbol)
 	{
 		return;
 	}
 
-	auto& buffer = binary.buffer();
+	const auto source_section = movable_symbol->section();
+	const auto next = std::next(location->list_iterator_);
 
-	const rva_t insertion_rva(rva_.value() + section_offset.value());
+	symbols_.splice(next, source_section->symbols_, movable_symbol->list_iterator_);
+	movable_symbol->section_ = location->section_;
+}
 
-	buffer.insert(buffer.begin() + insertion_rva.value(), data.begin(), data.end());
+void binwrite::section_t::move_symbol_before(const std::shared_ptr<symbol_t>& location, const std::shared_ptr<symbol_t>& movable_symbol)
+{
+	if (location == movable_symbol)
+	{
+		return;
+	}
 
-	binary.update_rvas(insertion_rva, static_cast<rva_t::size_type>(data.size()), true, false);
+	const auto source_section = movable_symbol->section();
 
-	size_ += static_cast<size_type>(data.size());
+	symbols_.splice(location->list_iterator_, source_section->symbols_, movable_symbol->list_iterator_);
+	movable_symbol->section_ = location->section_;
+}
+
+binwrite::section_t::section_t(const rva_t rva, const size_type size, const size_type padding,
+                               const bool code_section, const bool headers_section)
+		:	rva_(rva),
+			size_(size),
+		    padding_(padding),
+		    code_(code_section),
+		    headers_(headers_section)
+{
 }
 
 binwrite::rva_t binwrite::section_t::rva() const
@@ -74,6 +93,25 @@ void binwrite::section_t::add_padding(const size_type size)
 	padding_ += size;
 }
 
+void binwrite::section_t::remove_symbol(const std::shared_ptr<symbol_t>& symbol)
+{
+	symbols_.erase(symbol->list_iterator_);
+}
+
+void binwrite::section_t::sort_by_rva()
+{
+	symbols_.sort([](const std::shared_ptr<symbol_t>& a, const std::shared_ptr<symbol_t>& b)
+	{
+		const auto a_rva = a->rva();
+		const auto b_rva = b->rva();
+
+		if (!a_rva) return false;
+		if (!b_rva) return true;
+
+		return a_rva->value() < b_rva->value();
+	});
+}
+
 bool binwrite::section_t::contains(const rva_t rva) const
 {
 	const auto section_start = rva_;
@@ -89,5 +127,10 @@ bool binwrite::section_t::code() const
 
 bool binwrite::section_t::data() const
 {
-	return !code_;
+	return !code_ && !headers_;
+}
+
+bool binwrite::section_t::headers() const
+{
+	return headers_;
 }

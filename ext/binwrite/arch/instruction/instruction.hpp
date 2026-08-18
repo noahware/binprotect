@@ -13,6 +13,7 @@ namespace binwrite
 	{
 	public:
 		using size_type = std::uint8_t;
+		using id_type = std::uint32_t;
 		using value_type = std::span<std::uint8_t>;
 		using const_value_type = std::span<const std::uint8_t>;
 
@@ -46,7 +47,8 @@ namespace binwrite
 
 		instruction_t(const instruction_t& right)
 				:	size_(right.size_),
-					disassembly_(nullptr)
+					id_(right.id_),
+					disassembly_(right.disassembly_ ? std::make_unique<disassembled_instruction_t>(*right.disassembly_) : nullptr)
 		{
 			std::memcpy(bytes_.data(), right.bytes_.data(), right.size_);
 		}
@@ -55,8 +57,9 @@ namespace binwrite
 		{
 			if (this != &right)
 			{
-				disassembly_.reset();
 				size_ = right.size_;
+				id_ = right.id_;
+				disassembly_ = right.disassembly_ ? std::make_unique<disassembled_instruction_t>(*right.disassembly_) : nullptr;
 
 				std::memcpy(bytes_.data(), right.bytes_.data(), right.size_);
 			}
@@ -77,6 +80,16 @@ namespace binwrite
 		[[nodiscard]] size_type size() const
 		{
 			return size_;
+		}
+
+		[[nodiscard]] id_type id() const
+		{
+			return id_;
+		}
+
+		void set_id(const id_type id)
+		{
+			id_ = id;
 		}
 
 		[[nodiscard]] disassembled_instruction_t& disassemble()
@@ -106,7 +119,7 @@ namespace binwrite
 				return;
 			}
 
-			const disassembler_t disassembler;
+			thread_local const disassembler_t disassembler;
 
 			auto disassembly = disassembler.disassemble({ bytes_.data(), size_ });
 
@@ -120,6 +133,7 @@ namespace binwrite
 
 		std::array<std::uint8_t, max_size> bytes_;
 		size_type size_;
+		id_type id_ = 0;
 
 		mutable std::unique_ptr<disassembled_instruction_t> disassembly_ = {};
 	};

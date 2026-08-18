@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <portable-executable/image.hpp>
-
 using block_insertion_list_t = std::vector<std::tuple<std::shared_ptr<binwrite::basic_block_t>, binwrite::instruction_t, std::uint32_t>>;
 
 namespace binwrite
@@ -30,14 +29,6 @@ namespace binwrite
 		const portable_executable::runtime_function_t* runtime_function,
 		const binary_t& binary);
 
-	void reassemble_displacement_instruction(
-		portable_executable_t& pe,
-		const std::shared_ptr<basic_block_t>& basic_block,
-		std::uint32_t instruction_index,
-		instruction_t& instruction,
-		const instruction_t& compiled_instruction,
-		block_insertion_list_t& block_instructions);
-
 	void adjust_displacements_in_block(
 		portable_executable_t& pe,
 		const std::shared_ptr<basic_block_t>& basic_block,
@@ -61,12 +52,13 @@ namespace binwrite
 		const std::shared_ptr<function_t>& function,
 		portable_executable_t& pe,
 		block_insertion_list_t& block_instructions,
-		const instruction_t& pop_instruction);
+		const instruction_t& pop_instruction,
+		const std::unordered_set<rva_t::value_type>& runtime_function_blocks);
 
 	void apply_deferred_insertions(
 		portable_executable_t& pe,
-		std::vector<std::pair<std::shared_ptr<rva_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
-		const std::vector<std::pair<std::shared_ptr<rva_t>, std::vector<std::uint8_t>>>& unwind_code_insertions,
+		std::vector<std::pair<std::shared_ptr<symbol_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
+		const std::vector<std::pair<rva_t, std::vector<std::uint8_t>>>& unwind_code_insertions,
 		const block_insertion_list_t& block_instructions);
 
 	void adjust_catch_handler_displacements(
@@ -148,7 +140,7 @@ void binwrite::assign_runtime_function_basic_block(const binary_t& binary,
 		return;
 	}
 
-	const auto block_rva = *basic_block->rva();
+	const auto block_rva = *basic_block->original_rva();
 
 	if (!rva_in_runtime_function_range(block_rva, begin, end) || !visited.insert(block_rva.value()).second)
 	{
@@ -170,9 +162,9 @@ void binwrite::assign_runtime_function_basic_block(const binary_t& binary,
 
 	if (last_disassembly.is_jump())
 	{
-		if (const auto code_rva_ref = binary.find_rva_ref(basic_block->last_instruction_rva()))
+		if (const auto code_ref = binary.find_pending_ref(basic_block->original_last_instruction_rva()))
 		{
-			if (const auto target_basic_block = binary.find_basic_block(*code_rva_ref->target()))
+			if (const auto target_basic_block = binary.find_basic_block(rva_t{ code_ref->target }))
 			{
 				assign_runtime_function_basic_block(binary, function, target_basic_block, begin, end, visited);
 			}
@@ -183,9 +175,11 @@ void binwrite::assign_runtime_function_basic_block(const binary_t& binary,
 
 	if (!last_disassembly.is_unconditional_jump())
 	{
-		if (const auto fallthrough_basic_block = binary.find_basic_block(basic_block->end_rva()))
+		const auto end_rva = basic_block->original_end_rva();
+		const auto ft_block = binary.find_basic_block(end_rva);
+		if (ft_block)
 		{
-			assign_runtime_function_basic_block(binary, function, fallthrough_basic_block, begin, end, visited);
+			assign_runtime_function_basic_block(binary, function, ft_block, begin, end, visited);
 		}
 	}
 }
@@ -196,14 +190,14 @@ void binwrite::assign_runtime_function_jump_table_blocks(const binary_t& binary,
 	const rva_t begin, const rva_t end,
 	std::unordered_set<rva_t::value_type>& visited)
 {
-	for (const auto& target_rva : binary.jump_table_targets(basic_block->last_instruction_rva()))
+	for (const auto& target_rva : binary.jump_table_targets(basic_block->original_last_instruction_rva()))
 	{
-		if (!rva_in_runtime_function_range(*target_rva, begin, end))
+		if (!rva_in_runtime_function_range(target_rva, begin, end))
 		{
 			continue;
 		}
 
-		if (const auto target_basic_block = binary.find_basic_block(*target_rva))
+		if (const auto target_basic_block = binary.find_basic_block(target_rva))
 		{
 			assign_runtime_function_basic_block(binary, function, target_basic_block, begin, end, visited);
 		}
@@ -218,6 +212,16 @@ bool binwrite::scan_function_for_rewrite_conflicts(
 	const portable_executable::runtime_function_t* runtime_function,
 	const binary_t& binary)
 {
+	if (entry_block->count() > 0)
+	{
+		const auto& first_instruction = entry_block->at(0).disassemble();
+
+		if (first_instruction.is_call() || first_instruction.is_jump())
+		{
+			return true;
+		}
+	}
+
 	const std::int64_t prologue_stack_offset = compute_prologue_stack_offset(entry_block, unwind_info);
 
 	for (const auto& basic_block : function.basic_blocks())
@@ -235,9 +239,9 @@ bool binwrite::scan_function_for_rewrite_conflicts(
 				return true;
 			}
 
-			if (disassembly.is_jump() && !resolve_instruction_rva(disassembly, basic_block->instruction_rva(i)))
+			if (disassembly.is_jump() && !resolve_instruction_rva(disassembly, basic_block->original_instruction_rva(i)))
 			{
-				const auto jump_table_targets = binary.jump_table_targets(basic_block->instruction_rva(i));
+				const auto jump_table_targets = binary.jump_table_targets(basic_block->original_instruction_rva(i));
 
 				if (jump_table_targets.empty())
 				{
@@ -248,9 +252,9 @@ bool binwrite::scan_function_for_rewrite_conflicts(
 
 				for (const auto& target_rva : jump_table_targets)
 				{
-					if (*target_rva < rva_t{ runtime_function->begin_address } ||
-						rva_t{ runtime_function->end_address } <= *target_rva ||
-						!function.find_basic_block(*target_rva))
+					if (target_rva < rva_t{ runtime_function->begin_address } ||
+						rva_t{ runtime_function->end_address } <= target_rva ||
+						!function.find_basic_block(target_rva))
 					{
 						all_owned = false;
 						break;
@@ -305,52 +309,6 @@ bool binwrite::scan_function_for_rewrite_conflicts(
 	return false;
 }
 
-void binwrite::reassemble_displacement_instruction(
-	portable_executable_t& pe,
-	const std::shared_ptr<basic_block_t>& basic_block,
-	const std::uint32_t instruction_index,
-	instruction_t& instruction,
-	const instruction_t& compiled_instruction,
-	block_insertion_list_t& block_instructions)
-{
-	const std::int64_t size_diff = instruction.size() - compiled_instruction.size();
-
-	if (0 <= size_diff)
-	{
-		pe.insert(basic_block->instruction_rva(instruction_index), compiled_instruction.bytes());
-		pe.erase(rva_t{ basic_block->instruction_rva(instruction_index).value() + compiled_instruction.size() }, instruction.size());
-
-		const auto nop = nop_instruction();
-
-		for (std::int32_t z = 0; z < size_diff; z++)
-		{
-			pe.insert(rva_t{ basic_block->instruction_rva(instruction_index).value() }, nop->bytes());
-		}
-
-		instruction = compiled_instruction;
-	}
-	else
-	{
-		const auto instruction_size = instruction.size();
-		std::vector<std::uint8_t> nop_bytes(instruction_size, 0x90);
-		std::memcpy(pe.data() + basic_block->instruction_rva(instruction_index).value(), nop_bytes.data(), nop_bytes.size());
-
-		instruction = instruction_t{ nop_bytes };
-
-		std::uint32_t previous_count = 0;
-
-		for (const auto& [block, existing_instruction, index] : block_instructions)
-		{
-			if (basic_block == block && index <= instruction_index)
-			{
-				previous_count++;
-			}
-		}
-
-		block_instructions.emplace_back(basic_block, compiled_instruction, instruction_index + previous_count);
-	}
-}
-
 void binwrite::adjust_displacements_in_block(
 	portable_executable_t& pe,
 	const std::shared_ptr<basic_block_t>& basic_block,
@@ -397,7 +355,7 @@ void binwrite::adjust_displacements_in_block(
 			const auto reassembled = make_assembler_instruction(disassembly);
 			const auto compiled = reassembled->compile();
 
-			reassemble_displacement_instruction(pe, basic_block, j, instruction, *compiled, block_instructions);
+			basic_block->replace_instruction(j, *compiled);
 		}
 	}
 }
@@ -456,74 +414,109 @@ void binwrite::insert_exit_block_pops(
 	const std::shared_ptr<function_t>& function,
 	portable_executable_t& pe,
 	block_insertion_list_t& block_instructions,
-	const instruction_t& pop_instruction)
+	const instruction_t& pop_instruction,
+	const std::unordered_set<rva_t::value_type>& runtime_function_blocks)
 {
-	const auto exits = function->exit_blocks(pe);
-
-	for (const auto& exit_block : exits)
+	// a function's block list can hold blocks the disassembler folded in that are outside of the
+	// runtime function's own range, such as shared import thunks and tail jump targets. exits must
+	// be decided against that range: popping inside a shared thunk corrupts every other caller, and
+	// a tail jump whose target was folded in stops looking like an exit and never gets its pops
+	for (const auto& basic_block : function->basic_blocks())
 	{
-		if (!pe.jump_table_targets(exit_block->last_instruction_rva()).empty())
+		if (!basic_block || !basic_block->original_rva() ||
+			!runtime_function_blocks.contains(basic_block->original_rva()->value()))
 		{
 			continue;
+		}
+
+		const auto& original_last_instruction_rva = basic_block->original_last_instruction_rva();
+		const auto& last_disassembly = basic_block->last_instruction().disassemble();
+
+		if (!last_disassembly.is_ret())
+		{
+			if (!last_disassembly.is_unconditional_jump())
+			{
+				continue;
+			}
+
+			if (!pe.jump_table_targets(original_last_instruction_rva).empty())
+			{
+				continue;
+			}
+
+			const auto code_ref = pe.find_pending_ref(original_last_instruction_rva);
+
+			if (code_ref)
+			{
+				const auto target_basic_block = pe.find_basic_block(rva_t{ code_ref->target });
+
+				if (target_basic_block && target_basic_block->original_rva() &&
+					runtime_function_blocks.contains(target_basic_block->original_rva()->value()))
+				{
+					continue;
+				}
+			}
 		}
 
 		std::uint32_t previous_count = 0;
 
 		for (const auto& [block, instruction, index] : block_instructions)
 		{
-			if (exit_block == block)
+			if (basic_block == block)
 			{
 				previous_count++;
 			}
 		}
 
-		const std::uint32_t pop_index = static_cast<std::uint32_t>(exit_block->count()) - 1 + previous_count;
+		const std::uint32_t pop_index = static_cast<std::uint32_t>(basic_block->count()) - 1 + previous_count;
 
-		block_instructions.emplace_back(exit_block, pop_instruction, pop_index);
-		block_instructions.emplace_back(exit_block, pop_instruction, pop_index);
+		block_instructions.emplace_back(basic_block, pop_instruction, pop_index);
+		block_instructions.emplace_back(basic_block, pop_instruction, pop_index);
 	}
 }
 
 void binwrite::apply_deferred_insertions(
 	portable_executable_t& pe,
-	std::vector<std::pair<std::shared_ptr<rva_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
-	const std::vector<std::pair<std::shared_ptr<rva_t>, std::vector<std::uint8_t>>>& unwind_code_insertions,
+	std::vector<std::pair<std::shared_ptr<symbol_ref_t>, std::vector<std::uint8_t>>>& unwind_info_insertions,
+	const std::vector<std::pair<rva_t, std::vector<std::uint8_t>>>& unwind_code_insertions,
 	const block_insertion_list_t& block_instructions)
 {
 	const auto data_section = pe.data_section();
 
-	const rva_t insertion_rva = data_section->rva();
-
-	std::uint16_t size_added = 0;
-
-	for (auto& [rva_ref, bytes] : unwind_info_insertions)
+	for (auto& [symbol_ref, bytes] : unwind_info_insertions)
 	{
 		if (bytes.size() % 2)
 		{
-			bytes.insert(bytes.end(), 0);
+			bytes.push_back(0);
 		}
 
-		pe.insert(insertion_rva, bytes, true);
-		rva_ref->set_target(pe.add_rva(insertion_rva));
-		size_added += static_cast<std::uint16_t>(bytes.size());
-	}
+		const auto new_block = pe.create_data_block(*data_section, bytes);
 
-	constexpr std::uint16_t alignment = 32;
-
-	if (const auto pad = size_added % alignment; pad != 0)
-	{
-		pe.insert(rva_t{ insertion_rva.value() + size_added }, alignment - pad, true);
+		const auto all_refs_at_self = pe.find_all_symbol_refs_by_self(symbol_ref->self());
+		for (const auto& ref : all_refs_at_self)
+		{
+			ref->set_target(new_block);
+		}
 	}
 
 	for (const auto& [rva, bytes] : unwind_code_insertions)
 	{
-		pe.insert(*rva, bytes, true);
+		const auto containing_symbol = pe.find_containing_symbol(rva);
+
+		if (const auto data_block = std::dynamic_pointer_cast<data_block_t>(containing_symbol))
+		{
+			const auto offset = rva.value() - data_block->rva()->value();
+			data_block->insert_bytes(offset, bytes);
+		}
 	}
 
+	// the instructions inserted at index 0 deliberately stay in the entry block. splitting them off
+	// leaves a two instruction entry block, and a later pass that appends to the entry (such as
+	// control flow flattening's dispatcher anchor) then lands in the middle of the prologue, which
+	// invalidates every unwind code offset for the function
 	for (const auto& [basic_block, instruction, index] : block_instructions)
 	{
-		const bool inclusive = index != 0;
-		basic_block->insert(pe, instruction, index, inclusive);
+		basic_block->insert(pe, instruction, index);
 	}
 }
 
@@ -571,16 +564,16 @@ void binwrite::split_prologues(portable_executable_t& pe, const exception_contex
 			continue;
 		}
 
-		const auto prologue_end_rva = prologue.begin->value() + prologue.prolog_size;
+		const auto prologue_end_rva = prologue.begin.value() + prologue.prolog_size;
 
-		const auto basic_block = pe.find_basic_block(*prologue.begin);
+		const auto basic_block = pe.find_basic_block(prologue.begin);
 
 		if (!basic_block)
 		{
 			continue;
 		}
 
-		rva_t::value_type accumulated_rva = basic_block->rva()->value();
+		rva_t::value_type accumulated_rva = basic_block->original_rva()->value();
 		basic_block_t::size_type split_index = 0;
 		bool exact_boundary = false;
 

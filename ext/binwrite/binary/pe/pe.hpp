@@ -4,6 +4,8 @@
 
 #include <portable-executable/image.hpp>
 
+#include <array>
+
 namespace binwrite
 {
 	class pe_relocation_t : public relocation_t
@@ -11,7 +13,7 @@ namespace binwrite
 	public:
 		pe_relocation_t() = default;
 
-		explicit pe_relocation_t(std::shared_ptr<rva_t> target, const portable_executable::relocation_type_t type)
+		explicit pe_relocation_t(std::shared_ptr<symbol_t> target, const portable_executable::relocation_type_t type)
 				:	relocation_t(std::move(target)),
 					type_(type) { }
 
@@ -26,8 +28,8 @@ namespace binwrite
 
 	struct runtime_function_params_t
 	{
-		rva_t::value_type begin_address;
-		rva_t::value_type end_address;
+		std::shared_ptr<symbol_t> begin_symbol;
+		std::shared_ptr<symbol_t> end_symbol;
 		std::vector<portable_executable::unwind_code_t> unwind_codes;
 		portable_executable::unwind_register_t frame_register;
 		std::uint8_t frame_offset;
@@ -43,6 +45,7 @@ namespace binwrite
 
 		[[nodiscard]] std::uint64_t image_base() const override;
 		[[nodiscard]] rva_t entry_point() const override;
+		[[nodiscard]] std::size_t section_alignment() const override;
 
 		void decompress() override;
 		void compress() override;
@@ -53,25 +56,24 @@ namespace binwrite
 		[[nodiscard]] bool has_exceptions_directory() const;
 		[[nodiscard]] bool is_inside_runtime_function(rva_t rva) const;
 
-		void add_runtime_function(const runtime_function_params_t& params,
-		                          const std::shared_ptr<rva_t>& exception_directory_rva,
-		                          const std::shared_ptr<rva_t>& unwind_insertion_rva);
+		void add_runtime_function(const runtime_function_params_t& params);
 
 	protected:
 		struct runtime_function_t
 		{
-			std::shared_ptr<rva_t> begin;
-			std::shared_ptr<rva_t> end;
+			rva_t begin;
+			rva_t end;
 		};
 
 		std::vector<runtime_function_t> runtime_functions_;
+
+		void finalize_exception_directory();
 
 		void find_sections() override;
 		void update_section_headers() override;
 		void update_relocations() override;
 		bool is_definitely_in_code_range(rva_t rva) const override;
 
-		rva_t::value_type process_section_alignment(const std::shared_ptr<section_t>& info, std::uint32_t section_alignment);
 
 		void copy_sections(std::vector<std::uint8_t>& to, bool decompress);
 
@@ -89,21 +91,9 @@ namespace binwrite
 		                                   std::uint16_t depth = 0);
 		void add_export_rvas(const portable_executable::nt_headers_t* nt_headers);
 		void add_relocation_rvas(const portable_executable::nt_headers_t* nt_headers);
+		void add_unwind_info_rvas(const portable_executable::unwind_info_t* unwind_info);
 		void add_exception_rvas(const portable_executable::nt_headers_t* nt_headers);
-
-		template <class T>
-		std::shared_ptr<data_rva_ref_t> add_relocation_ref(const T* const value)
-		{
-			const auto data_reference = static_cast<rva_t::value_type>(reinterpret_cast<const std::uint8_t*>(value) - data());
-			const auto data_rva = add_rva(static_cast<rva_t::value_type>(*value));
-
-			const auto ref = std::make_shared<data_rva_ref_t>(data_rva, rva_t{ data_reference }, static_cast<data_rva_ref_t::size_type>(sizeof(T)));
-
-			add_rva_ref(ref);
-
-			return ref;
-		}
-
 		void find_data_rvas() override;
+		void finalize_before_recompile() override;
 	};
 }

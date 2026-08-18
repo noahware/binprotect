@@ -132,4 +132,6 @@ namespace binwrite
 	std::optional<assembler_instruction_t> make_assembler_instruction(const std::uint8_t* instruction);
 
 	std::optional<assembler_instruction_t> make_assembler_instruction(mnemonic_t mnemonic, std::span<const encoder_operand_t> operands);
+
+	std::optional<instruction_t> widen_instruction(const instruction_t& instruction);
 }

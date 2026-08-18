@@ -1,4 +1,4 @@
-#include "pe.hpp"
+﻿#include "pe.hpp"
 
 void binwrite::portable_executable_t::find_sections()
 {
@@ -7,6 +7,12 @@ void binwrite::portable_executable_t::find_sections()
 	const auto nt_headers = img->nt_headers();
 	const auto section_headers = nt_headers->section_headers();
 	const auto section_count = nt_headers->file_header.number_of_sections;
+
+	const auto headers_size = nt_headers->optional_header.size_of_headers;
+	const auto headers_section = std::make_shared<section_t>(rva_t{ 0 }, headers_size, 0, false, true);
+
+	sections_[{}] = headers_section;
+	create_data_block(*headers_section, std::span{ data(), headers_size }, rva_t{ 0 });
 
 	for (std::uint16_t i = 0; i < section_count; i++)
 	{
@@ -24,7 +30,14 @@ void binwrite::portable_executable_t::find_sections()
 		const auto total_size = next_virtual_address - virtual_address;
 		const auto padding_size = total_size - section->virtual_size;
 
-		sections_[section_name] = std::make_shared<section_t>(rva_t{ virtual_address }, section->virtual_size, padding_size, code_section);
+		auto new_section = std::make_shared<section_t>(rva_t{ virtual_address }, section->virtual_size, padding_size, code_section);
+
+		sections_[section_name] = new_section;
+
+		if (!code_section)
+		{
+			create_data_block(*new_section, std::span{ data() + virtual_address, section->virtual_size }, rva_t{ virtual_address });
+		}
 	}
 }
 
@@ -49,49 +62,6 @@ void binwrite::portable_executable_t::copy_sections(std::vector<std::uint8_t>& t
 	std::memcpy(to.data(), buffer_.data(), size_of_headers);
 }
 
-binwrite::rva_t::value_type binwrite::portable_executable_t::process_section_alignment(
-	const std::shared_ptr<section_t>& info, const std::uint32_t section_alignment)
-{
-	const rva_t::value_type unaligned_section_end = info->end_rva().value();
-	const rva_t::value_type aligned_section_end = portable_executable::image_t::calculate_alignment(unaligned_section_end, section_alignment);
-
-	const rva_t::value_type excess = unaligned_section_end % section_alignment;
-
-	if (!excess)
-	{
-		return aligned_section_end;
-	}
-
-	const rva_t padding_rva(unaligned_section_end - info->padding());
-
-	if (excess <= info->padding())
-	{
-		const auto excess_begin = buffer_.begin() + padding_rva.value();
-
-		buffer_.erase(excess_begin, excess_begin + static_cast<rva_t::size_type>(excess));
-
-		update_rvas(padding_rva, -static_cast<std::int32_t>(excess), true, false);
-
-		info->remove_padding(excess);
-
-		return unaligned_section_end - excess;
-	}
-
-	const auto padding_size = static_cast<std::int32_t>(aligned_section_end - unaligned_section_end);
-
-	const std::uint8_t padding_value = info->code() ? 0xCC : 0x00;
-
-	const auto it = buffer_.begin() + padding_rva.value();
-
-	buffer_.insert(it, padding_size, padding_value);
-
-	update_rvas(padding_rva, padding_size, true, false);
-
-	info->add_padding(padding_size);
-
-	return aligned_section_end;
-}
-
 void binwrite::portable_executable_t::update_section_headers()
 {
 	const std::uint32_t size_of_headers = image()->nt_headers()->optional_header.size_of_headers;
@@ -106,30 +76,46 @@ void binwrite::portable_executable_t::update_section_headers()
 
 	for (auto& section_header : img->sections())
 	{
-		if (!section_rva.value())
-		{
-			section_rva.set_value(section_header.virtual_address);
-		}
-
 		const auto section_name = section_header.to_str();
 		const auto& info = sections_[section_name];
 
-		info->set_rva(section_rva);
 
-		const std::uint32_t section_alignment = nt_headers->optional_header.section_alignment;
-
-		const rva_t aligned_section_end(process_section_alignment(info, section_alignment));
-
-		section_header.virtual_address = section_rva.value();
+		section_header.virtual_address = info->rva().value();
 		section_header.virtual_size = info->size();
 
 		section_header.pointer_to_raw_data = section_header.virtual_address;
 		section_header.size_of_raw_data = section_header.virtual_size;
 
-		section_rva = aligned_section_end;
+		section_rva.set_value(info->rva().value() + info->size() + info->padding());
 	}
 
 	nt_headers->optional_header.size_of_image = section_rva.value();
+	nt_headers->optional_header.dll_characteristics &= ~0x4000;
+
+	if (const auto load_config = image()->load_config())
+	{
+		load_config->guard_cf_check_function_pointer = 0;
+		load_config->guard_cf_dispatch_function_pointer = 0;
+		load_config->guard_long_jump_target_table.virtual_address = 0;
+		load_config->guard_long_jump_target_table.size = 0;
+		load_config->guard_eh_continuation_table.virtual_address = 0;
+		load_config->guard_eh_continuation_table.size = 0;
+		load_config->guard_flags = 0;
+	}
+
+	const auto reloc_va = nt_headers->optional_header.data_directories.basereloc_directory.virtual_address;
+	const auto reloc_it = disassembly_symbol_map_.find(reloc_va);
+
+	if (reloc_it != disassembly_symbol_map_.end())
+	{
+		if (const auto rva = reloc_it->second->rva())
+		{
+			nt_headers->optional_header.data_directories.basereloc_directory.virtual_address = rva->value();
+		}
+
+		nt_headers->optional_header.data_directories.basereloc_directory.size
+			= static_cast<std::uint32_t>(reloc_it->second->size());
+	}
 
 	std::memcpy(data(), headers_buffer.data(), headers_buffer.size());
 }

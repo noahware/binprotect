@@ -163,7 +163,7 @@ std::optional<binwrite::assembler_instruction_t> binwrite::make_assembler_instru
 	const ZyanU8 operand_count = static_cast<ZyanU8>(decoded_operands.size());
 
 	ZydisEncoderRequest request;
-		
+
 	const auto status = ZydisEncoderDecodedInstructionToEncoderRequest(&decoded_instruction, decoded_operands.data(), operand_count, &request);
 
 	if (!ZYAN_SUCCESS(status))
@@ -207,9 +207,54 @@ std::optional<binwrite::assembler_instruction_t> binwrite::make_assembler_instru
 	for (std::uint64_t i = 0; i < operands.size(); i++)
 	{
 		const encoder_operand_t& operand = operands[i];
-	
+
 		request.operands[i] = operand;
 	}
 
 	return assembler_instruction_t{ request };
+}
+
+std::optional<binwrite::instruction_t> binwrite::widen_instruction(const instruction_t& instruction)
+{
+	ZydisDecoder decoder;
+	ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
+
+	ZydisDecoderContext context;
+	ZydisDecodedInstruction decoded;
+
+	const auto* const bytes = instruction.bytes().data();
+
+	if (!ZYAN_SUCCESS(ZydisDecoderDecodeInstruction(&decoder, &context, bytes, instruction.size(), &decoded)))
+	{
+		return std::nullopt;
+	}
+
+	ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
+
+	if (!ZYAN_SUCCESS(ZydisDecoderDecodeOperands(&decoder, &context, &decoded, operands, decoded.operand_count)))
+	{
+		return std::nullopt;
+	}
+
+	ZydisEncoderRequest request;
+
+	if (!ZYAN_SUCCESS(ZydisEncoderDecodedInstructionToEncoderRequest(&decoded, operands, decoded.operand_count_visible, &request)))
+	{
+		return std::nullopt;
+	}
+
+	request.branch_type = ZYDIS_BRANCH_TYPE_NONE;
+	request.branch_width = ZYDIS_BRANCH_WIDTH_32;
+
+	std::uint8_t widened_bytes[ZYDIS_MAX_INSTRUCTION_LENGTH];
+	auto widened_size = static_cast<ZyanUSize>(sizeof(widened_bytes));
+
+	if (!ZYAN_SUCCESS(ZydisEncoderEncodeInstruction(&request, widened_bytes, &widened_size)))
+	{
+		return std::nullopt;
+	}
+
+	const instruction_t::const_value_type widened_span(widened_bytes, widened_size);
+
+	return instruction_t{ widened_span };
 }
